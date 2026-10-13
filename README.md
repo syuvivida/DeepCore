@@ -22,25 +22,24 @@ More information and documentation about DeepCore2.0 can be found here:
 		- Edit DeepCoreNtuplizer.cc to adjust things pertaining to the training samples (step 2)
 		  	- pixel size fix, saving pt instead of 1/pt, adding new variables in the training sample..
 
-- I used CMSSW_12_1_1,  but you should use whatever cms release is compatible with your dataset
-  	- You can read off the dataset (e.g: /`RelValTTbar_14TeV/CMSSW_12_4_0-124X_mcRun3_2022_realistic_v5-v1/NANOAODSIM` ---> CMSSW_12_4_0)
-	- Note: may need to change one line in DeepCoreNtuplizer.cc (static const int ->const int ) to compile with CMSSW_12_6_4
-- `cmsrel CMSSW_12_1_1`
-- `cd CMSSW_12_1_1/src/`
-- `scram b -j 8`
-- `cmsenv`
+- I used CMSSW_17_0_0_pre2,  but you should use whatever cms release is compatible with your dataset
+```
+cmsrel CMSSW_17_0_0_pre2
+cd CMSSW_17_0_0_pre2/src/
+cmsenv
+```
 - if you haven't setup up Github with your CERN/fermilab account, please do that (adjust details accordingly):
 	- `git config --global user.name "Hichem Bouchamaoui"`
 	- `git config --global user.email "bouchamaouihichem@gmail.com"`
 	- `git config --global user.github bouchamaouihichem`
-- `git cms-addpkg RecoTracker`
-- `cd RecoTracker/`
-- copy Ntuplizer folder from the DeepCore repo (Ntuplizer/DeepCoreTraining)
-- Go back to src to compile : 
-	- `cd ..`
-	- `scram b -j 8`
-- `cmsenv`
-- `voms-proxy-init --voms cms`
+- Download the DeepCore package
+```
+git clone -b 17_0_X git@github.com:syuvivida/DeepCore
+mv DeepCore/Ntuplizer .
+rm -rf DeepCore
+cd $CMSSW_BASE
+scram b -j 8
+```
 
 ## C) Running the Ntuplizer (after fresh login):
 - `cmsenv`
@@ -68,7 +67,7 @@ More information and documentation about DeepCore2.0 can be found here:
  - Things that you must edit:
 	- Change Request name in L4 to reflect the date or dataset: `config.General.requestName = 'DeepCorePrepareInput1224'`
 	- Change Output dataset name if you want: `config.Data.outputDatasetTag = 'DeepCoreNtuplizerInput'`
-	- edit in AODSIM and GEN-SIM or GEN-SIM-DIGI-RAW files L13-L14
+	- edit in GEN-SIM-RECO and GEN-SIM or GEN-SIM-DIGI-RAW files L13-L14
 		- `config.Data.inputDataset = '/RelValQCD_Pt_1800_2400_14/CMSSW_12_0_0_pre3-PU_120X_mcRun3_2021_realistic_v1_aodsim-v1/AODSIM'`
 		- `config.Data.secondaryInputDataset = '/RelValQCD_Pt_1800_2400_14/CMSSW_12_0_0_pre3-PU_120X_mcRun3_2021_realistic_v1-v1/GEN-SIM`
 	- Adjust total number of events and event per job:
@@ -81,8 +80,8 @@ More information and documentation about DeepCore2.0 can be found here:
 	- relevant [twiki](https://twiki.cern.ch/twiki/bin/view/CMSPublic/CRAB3ConfigurationFile) for crab config file
 	- When using Track Pog eos space (mainly due to storage reasons), need to:
 		- adjust site in L32 to `T2_CH_CERN`
-		- add line: `config.Data.outLFNDirBase = '/store/group/phys_tracking/Hichemb/DeepCoreNtuplizer/'`
-			- because the full dir is: `/eos/cms/store/group/phys_tracking/Hichemb/DeepCoreNtuplizer`
+		- add line: `config.Data.outLFNDirBase = '/store/group/phys_tracking/syu/DeepCoreNtuplizer/'`
+			- because the full dir is: `/eos/cms/store/group/phys_tracking/syu/DeepCoreNtuplizer`
 		- check if there is space beforehand using: `eos quota /eos/cms/store/group/phys_tracking/`
 - Other changes you can ignore:
   	- Deleted L28 since outdated: crab will automatically put output in your eos directory

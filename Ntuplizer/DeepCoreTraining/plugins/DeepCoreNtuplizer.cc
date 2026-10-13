@@ -13,7 +13,8 @@
 //
 // Original Author:  Valerio Bertacchi
 //         Created:  Fri, 09 Jul 2021 10:43:34 GMT
-//
+// v2             : Hichem Bouchamaoui
+// Updated:       Shin-Shan Eiko Yu
 //
 
 // system include files
@@ -34,7 +35,6 @@
 
 #include "Geometry/CommonDetUnit/interface/GlobalTrackingGeometry.h"
 #include "Geometry/Records/interface/GlobalTrackingGeometryRecord.h"
-#include "Geometry/CommonDetUnit/interface/GlobalTrackingGeometry.h"
 #include "Geometry/Records/interface/TrackerTopologyRcd.h"
 
 #include "DataFormats/TrackerCommon/interface/TrackerTopology.h"
@@ -75,7 +75,7 @@
 #include "FWCore/ServiceRegistry/interface/Service.h"
 #include "CommonTools/UtilAlgos/interface/TFileService.h"
 
-#include "SimG4Core/Notification/interface/G4SimTrack.h"
+//#include "SimG4Core/Notification/interface/G4SimTrack.h"
 #include "SimDataFormats/Track/interface/SimTrack.h"
 
 // #include "SimDataFormats/Vertex/interface/SimVertex.h"
@@ -123,10 +123,10 @@ public:
   TTree* DeepCoreNtuplizerTree;
   static const int jetDimX =30;//200
   static const int jetDimY =30;//200
-  static const int Nlayer =7;//4;
+  static const int Nlayer = 4; //7
   static const int Ntrack = 100;
   static const int Npar = 5; //added 1/pt
-  static const int Nover = 3;
+  static const int Nover = 3; // number of overlapped tracks
   double clusterMeas[jetDimX][jetDimY][Nlayer];
   double trackPar[jetDimX][jetDimY][Nover][Npar+1]; //NOFLAG
   double trackProb[jetDimX][jetDimY][Nover];
@@ -148,9 +148,9 @@ public:
   int eventID;
 
 
-  double pitchX = 0.01;
-  double pitchY = 0.015;
-  static const int distThr = 2;//4
+  const double pitchX = 0.01;
+  const double pitchY = 0.015;
+  const int distThr = 2;//4
 
 
 
@@ -160,9 +160,16 @@ private:
   // ----------member data ---------------------------
   
   std::string propagatorName_;
+  const edm::ESGetToken<MagneticField, IdealMagneticFieldRecord> theFieldToken;
+  const edm::ESGetToken<GlobalTrackingGeometry, GlobalTrackingGeometryRecord> geomToken;
+  const edm::ESGetToken<Propagator, TrackingComponentsRecord> propToken;
+  const edm::ESGetToken<PixelClusterParameterEstimator, TkPixelCPERecord> pixelClusterParameterEstimatorToken;
+  const edm::ESGetToken<TrackerTopology, TrackerTopologyRcd> tTopToken;
+
   edm::ESHandle<MagneticField>          magfield_;
   edm::ESHandle<GlobalTrackingGeometry> geometry_;
   edm::ESHandle<Propagator>             propagator_;
+
 
   edm::EDGetTokenT<std::vector<reco::Vertex> > vertices_;
   edm::EDGetTokenT<edmNew::DetSetVector<SiPixelCluster> > pixelClusters_;
@@ -183,7 +190,7 @@ private:
   double deltaR_;
   double chargeFracMin_;
   double centralMIPCharge_;
-  std::string pixelCPE_;
+
   
   bool barrelTrain_;
   bool endcapTrain_;
@@ -214,7 +221,11 @@ private:
 };
 
 DeepCoreNtuplizer::DeepCoreNtuplizer(const edm::ParameterSet& iConfig) :
-
+      theFieldToken(esConsumes()),
+      geomToken(esConsumes()),
+      propToken(esConsumes(edm::ESInputTag("", "AnalyticalPropagator"))),
+      pixelClusterParameterEstimatorToken(esConsumes(edm::ESInputTag("", iConfig.getParameter<std::string>("pixelCPE")))),
+      tTopToken(esConsumes()),
       vertices_(consumes<reco::VertexCollection>(iConfig.getParameter<edm::InputTag>("vertices"))),
       pixelClusters_(consumes<edmNew::DetSetVector<SiPixelCluster> >(iConfig.getParameter<edm::InputTag>("pixelClusters"))),
       cores_(consumes<edm::View<reco::Candidate> >(iConfig.getParameter<edm::InputTag>("cores"))),
@@ -226,7 +237,6 @@ DeepCoreNtuplizer::DeepCoreNtuplizer(const edm::ParameterSet& iConfig) :
       deltaR_(iConfig.getParameter<double>("deltaR")),
       chargeFracMin_(iConfig.getParameter<double>("chargeFractionMin")),
       centralMIPCharge_(iConfig.getParameter<double>("centralMIPCharge")),
-      pixelCPE_(iConfig.getParameter<std::string>("pixelCPE")),
       barrelTrain_(iConfig.getParameter<bool>("barrelTrain")),
       endcapTrain_(iConfig.getParameter<bool>("endcapTrain")),
       fullTrain_(iConfig.getParameter<bool>("fullTrain"))
@@ -236,9 +246,9 @@ DeepCoreNtuplizer::DeepCoreNtuplizer(const edm::ParameterSet& iConfig) :
    edm::Service<TFileService> fileService;
 
    DeepCoreNtuplizerTree= fileService->make<TTree>("DeepCoreNtuplizerTree","DeepCoreNtuplizerTree");
-   DeepCoreNtuplizerTree->Branch("cluster_measured",clusterMeas,"cluster_measured[30][30][7]/D");
-   DeepCoreNtuplizerTree->Branch("trackPar", trackPar, "trackPar[30][30][3][6]/D"); //NOFLAG
-   DeepCoreNtuplizerTree->Branch("trackProb", trackProb, "trackProb[30][30][3]/D");
+   DeepCoreNtuplizerTree->Branch("cluster_measured",clusterMeas,Form("cluster_measured[%d][%d][%d]/D",jetDimX,jetDimY,Nlayer));
+   DeepCoreNtuplizerTree->Branch("trackPar", trackPar, Form("trackPar[%d][%d][%d][%d]/D",jetDimX,jetDimY,Nover,Npar+1)); //NOFLAG
+   DeepCoreNtuplizerTree->Branch("trackProb", trackProb, Form("trackProb[%d][%d][%d]/D",jetDimX,jetDimY,Nover));
    DeepCoreNtuplizerTree->Branch("jet_eta",&jet_eta);
    DeepCoreNtuplizerTree->Branch("jet_pt",&jet_pt);
    DeepCoreNtuplizerTree->Branch("jet_p",&jet_p);
@@ -258,17 +268,18 @@ DeepCoreNtuplizer::DeepCoreNtuplizer(const edm::ParameterSet& iConfig) :
 
 
    /// dichiarare cosa produce  produces<asd
-     for(int i=0; i<Nlayer; i++){ //NOFLAG
-       for(int j=0; j<jetDimX; j++){
-         for(int k=0; k<jetDimY; k++){
-           if(j<jetDimX && k<jetDimY && i< Nlayer) clusterMeas[j][k][i] = 0.0;
-           for(int m=0; m<Nover; m++){
-             if(j<jetDimX && k<jetDimY && i< Npar+1 && m<Nover) trackPar[j][k][m][i] =0.0;
-             if(j<jetDimX && k<jetDimY && m<Nover) trackProb[j][k][m] =0.0;
-           }
-         }
+   for(unsigned int ix=0; ix<jetDimX; ix++){
+     for(unsigned int iy=0; iy<jetDimY; iy++){
+       // first initialize clusterMeas
+       for(unsigned int ilay=0; ilay < Nlayer; ilay++) clusterMeas[ix][iy][ilay] = 0.0;
+       for(unsigned int iOver=0; iOver < Nover; iOver++){
+	 trackProb[ix][iy][iOver] =0.0;
+	 for(unsigned int ipar=0; ipar<Npar+1; ipar++)
+	   trackPar[ix][iy][iOver][ipar] =0.0;	 
        }
      }
+   }
+
   
   if(barrelTrain_) {
     absEtaMax = 1.4;
@@ -316,9 +327,10 @@ void DeepCoreNtuplizer::produce(edm::Event& iEvent, const edm::EventSetup& iSetu
   //   }
   // }
 
-  iSetup.get<IdealMagneticFieldRecord>().get( magfield_ );
-  iSetup.get<GlobalTrackingGeometryRecord>().get(geometry_);
-  iSetup.get<TrackingComponentsRecord>().get( "AnalyticalPropagator", propagator_ );
+  magfield_   = iSetup.getHandle(theFieldToken);
+  geometry_   = iSetup.getHandle(geomToken);
+  propagator_ = iSetup.getHandle(propToken);
+
 
   iEvent.getByToken(pixelClusters_, inputPixelClusters);
   allSiPixelClusters.clear(); siPixelDetsWithClusters.clear();
@@ -337,13 +349,11 @@ void DeepCoreNtuplizer::produce(edm::Event& iEvent, const edm::EventSetup& iSetu
   Handle<edm::View<reco::Candidate> > cores;
   iEvent.getByToken(cores_, cores);
 
-  edm::ESHandle<PixelClusterParameterEstimator> parEstHandle;
+  edm::ESHandle<PixelClusterParameterEstimator> parEstHandle = iSetup.getHandle(pixelClusterParameterEstimatorToken);
   const PixelClusterParameterEstimator* parEst;
-  iSetup.get<TkPixelCPERecord>().get(pixelCPE_, parEstHandle);
   parEst = parEstHandle.product();
 
-  edm::ESHandle<TrackerTopology> tTopoHandle;
-  iSetup.get<TrackerTopologyRcd>().get(tTopoHandle);
+  edm::ESHandle<TrackerTopology> tTopoHandle = iSetup.getHandle(tTopToken);
   const TrackerTopology* const tTopo = tTopoHandle.product();
 
   auto output = std::make_unique<edmNew::DetSetVector<SiPixelCluster>>();
@@ -412,9 +422,9 @@ void DeepCoreNtuplizer::produce(edm::Event& iEvent, const edm::EventSetup& iSetu
         for (auto cluster = detset.begin(); cluster != detset.end(); cluster++) { //loop cluster
 
           const SiPixelCluster& aCluster = *cluster;
-          det_id_type aClusterID= detset.id();
-
+	  //          det_id_type aClusterID= detset.id();
           // if(DetId(aClusterID).subdetId()!=1) continue; #select only  barrel clusters
+
           int lay = tTopo->layer(det->geographicalId());
           if(det->geographicalId().subdetId()==PixelSubdetector::PixelEndcap) {
             lay=lay+4; //endcap layer counting = 5,6,7
@@ -486,31 +496,36 @@ void DeepCoreNtuplizer::produce(edm::Event& iEvent, const edm::EventSetup& iSetu
 
     clusterMapVector.clear();
     DeepCoreNtuplizerTree->Fill();
-    edm::LogInfo("EventMonitor|seeding") << "N.pixel on layer 0=" <<NPixLay[0] << ", 1=" <<NPixLay[1] <<", 2=" <<NPixLay[1] << ", 3=" <<NPixLay[2]<<", 4=" <<NPixLay[4] <<", 5=" <<NPixLay[5] << ", 6=" <<NPixLay[6]<<std::endl;
+    edm::LogInfo("EventMonitor|seeding").log([&](auto& li) {
+      li << "N.pixel on layer ";
+      for (size_t i = 0; i < Nlayer; ++i) {
+        li << i << "=" << NPixLay[i] << ", ";
+      }
+      li << "\n";
+    });    
 
 
-
-    for(int i=0; i<Nlayer; i++){
-      for(int j=0; j<jetDimX; j++){
-        for(int k=0; k<jetDimY; k++){
-          if(j<jetDimX && k<jetDimY && i< Nlayer) clusterMeas[j][k][i] = 0.0;
-          for(int m=0; m<Nover; m++){
-            if(trackPar[j][k][m][i]!=0 && j<jetDimX && k<jetDimY && i< Npar+1 && m<Nover) trackPar[j][k][m][i] =0.0; //NOFLAG
-            if(trackProb[j][k][m]!=0 && j<jetDimX && k<jetDimY && m<Nover) trackProb[j][k][m] =0.0;
-          }
-          for(int h=0; h<Ntrack; h++){
-            if(h<Ntrack) track_pt[h] = 0.0;
-            if(h<Ntrack) track_pz[h] = 0.0;
-            if(h<Ntrack) track_eta[h] = 0.0;
-            if(h<Ntrack) track_phi[h] = 0.0;
-          }
-        }
+    for(unsigned int ix=0; ix<jetDimX; ix++){
+      for(unsigned int iy=0; iy<jetDimY; iy++){	
+	for(unsigned int ilay=0; ilay < Nlayer; ilay++) clusterMeas[ix][iy][ilay] = 0.0;	
+	for(unsigned int iOver=0; iOver<Nover; iOver++){
+	  trackProb[ix][iy][iOver] =0.0;
+	  for(unsigned int ipar=0; ipar < Npar+1; ipar++)
+            trackPar[ix][iy][iOver][ipar] =0.0; //NOFLAG
+	} 
       }
     }
+    for(unsigned int h=0; h<Ntrack; h++){
+      track_pt[h] = 0.0;
+      track_pz[h] = 0.0;
+      track_eta[h] = 0.0;
+      track_phi[h] = 0.0;
+    }    
+    
     trkIDset.clear();
-  } //bigcluster
-  } //jet > pt
- } //jet
+      } //bigcluster
+    } //jet > pt
+  } //jet
 trackMap.clear();
 }
 
@@ -750,8 +765,8 @@ trackMap.clear();
             else trackPar[x][y][trk][1]=0.0;
             trackPar[x][y][trk][2]=100*tracksInfo.at(trk).xangle;
             trackPar[x][y][trk][3]=100*tracksInfo.at(trk).yangle;
-            trackPar[x][y][trk][5]=tracksInfo.at(trk).zero_flag; //NOFLAG
             trackPar[x][y][trk][4]=tracksInfo.at(trk).one_over_pt;
+            trackPar[x][y][trk][5]=tracksInfo.at(trk).zero_flag; //NOFLAG
             trackProb[x][y][trk]=tracksInfo.at(trk).prob;
 
             if(oneHitInfo){
