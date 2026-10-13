@@ -24,6 +24,7 @@ More information and documentation about DeepCore2.0 can be found here:
 
 - I used CMSSW_17_0_0_pre2,  but you should use whatever cms release is compatible with your dataset
 ```
+export SCRAM_ARCH=el9_amd64_gcc14
 cmsrel CMSSW_17_0_0_pre2
 cd CMSSW_17_0_0_pre2/src/
 cmsenv
