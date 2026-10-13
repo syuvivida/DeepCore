@@ -56,7 +56,7 @@ scram b -j 8
 ### a) test_DeepCorePrepareInput.py: (Ntuplizer step 1): 
 - Things that might need editing:
 	- adjust era if needed: Changed era to eras.Run3 in L5 as shown in this [twiki](https://twiki.cern.ch/twiki/bin/view/CMSPublic/SWGuideCmsDriverEras). Also potentially relevant [twiki](https://twiki.cern.ch/twiki/bin/view/CMSPublic/SWGuideGlobalHLT#Trigger_development_for_Run_3).
-	- adjust tag name if needed: Changed global tag to auto:phase1_2021_realistic in L72 as shown in this [twiki](https://twiki.cern.ch/twiki/bin/view/CMSPublic/SWGuideGlobalHLT#Setup_for_Running_on_MC_and_Data)
+	- adjust tag name if needed: Changed global tag to auto:phase1_2026_realistic in L72 as shown in this [twiki](https://twiki.cern.ch/twiki/bin/view/CMSPublic/SWGuideGlobalHLT#Setup_for_Running_on_MC_and_Data)
 	- Adjust output filename to Ntuplizer_output1.root in L55
 			- Don't forget to edit the other crab file, though the other crab job takes the publication name of the jobs rather than the files path
 			- It would be nice to adjust step 1 ouput file name form  Ntuplizer_output1.root to Ntuplizer_step1.root
@@ -69,8 +69,10 @@ scram b -j 8
 	- Change Request name in L4 to reflect the date or dataset: `config.General.requestName = 'DeepCorePrepareInput1224'`
 	- Change Output dataset name if you want: `config.Data.outputDatasetTag = 'DeepCoreNtuplizerInput'`
 	- edit in GEN-SIM-RECO and GEN-SIM or GEN-SIM-DIGI-RAW files L13-L14
-		- `config.Data.inputDataset = '/RelValQCD_Pt_1800_2400_14/CMSSW_12_0_0_pre3-PU_120X_mcRun3_2021_realistic_v1_aodsim-v1/AODSIM'`
-		- `config.Data.secondaryInputDataset = '/RelValQCD_Pt_1800_2400_14/CMSSW_12_0_0_pre3-PU_120X_mcRun3_2021_realistic_v1-v1/GEN-SIM`
+	```
+	config.Data.inputDataset = '/RelValQCD_Pt_1800_2400_14/CMSSW_17_0_0_pre2-160X_mcRun3_2026_realistic_v6_STD_2026_RecycledGS_noPU-v2/GEN-SIM-RECO'
+	config.Data.secondaryInputDataset = '/RelValQCD_Pt_1800_2400_14/CMSSW_17_0_0_pre1-160X_mcRun3_2026_realistic_v6_STD_RegeneratedGS_2026_noPU_20260519_170947-v2/GEN-SIM'
+	```
 	- Adjust total number of events and event per job:
 		- Edited L25-L26 to specify number of jobs and units per jobs: (don't use the same numbers, these numbers assume a dataset of with 9000 events, you'll probably be using one with 1M+ )
 			- `config.Data.unitsPerJob = 1000`
@@ -90,14 +92,14 @@ scram b -j 8
 - Global tag adjustments:
 	- Remove  L16 and add these 2 lines:
 		- `from Configuration.AlCa.GlobalTag import GlobalTag`
-		- `process.GlobalTag = GlobalTag(process.GlobalTag,'auto:phase1_2021_realistic','')`
+		- `process.GlobalTag = GlobalTag(process.GlobalTag,'auto:phase1_2026_realistic','')`
 	- This update guarantees that the config file will find the appropriate detector condition depending on the cmssw version of the dataset according to [twiki](https://twiki.cern.ch/twiki/bin/view/CMSPublic/SWGuideGlobalHLT#Setup_for_Running_on_MC_and_Data)
-		- "It is vital that the correct GlobalTag is used. One can take advantage of special GT keywords in [autoCond.py](https://github.com/cms-sw/cmssw/blob/master/Configuration/AlCa/python/autoCond.py) to specify a type of GT; autoCond.py then resolves to the appropriate GT for the CMSSW release that's being used. We use "`auto:phase1_2021_realistic`" for MC, and "`auto:run3_hlt`" for Data."
+		- "It is vital that the correct GlobalTag is used. One can take advantage of special GT keywords in [autoCond.py](https://github.com/cms-sw/cmssw/blob/master/Configuration/AlCa/python/autoCond.py) to specify a type of GT; autoCond.py then resolves to the appropriate GT for the CMSSW release that's being used. We use "`auto:phase1_2026_realistic`" for MC, and "`auto:run3_hlt`" for Data."
 - edit output file name in L60 if needed
 - adjust number of threads and streams in L30-L31 to 8 to match crab config file.
 ### d) test_DeepCoreNtuplizer_crab.py: (Ntuplizer step 2):
 - edit input file L14: 
-	- published dataset name of the output of step1 on DBS (phys03) for DeepCore2.0: `/RelValQCD_Pt_1800_2400_14/hboucham-DeepCoreNtuplizerInput-e101c270c65c32f52437c2373244ff6e/USER`
+	- published dataset name of the output of step1 on DBS (phys03) for DeepCore2.0: `/RelValQCD_Pt_1800_2400_14/phys_tracking-DeepCoreNtuplizerInput-64d67f3f018c65608e1ef82a17ea6531/USER`
 	- You need to find the name of the dataset published in DBS. To do that you can look at the end of the crab.log file of the jobs you submitted in step 1: (e.g: `crab_projects/crab_DeepCorePrepareInput/crab.log`)
 		- Alternatively you can copy it from the output of the crab status command 
 - Adjust total number of events and event per job:

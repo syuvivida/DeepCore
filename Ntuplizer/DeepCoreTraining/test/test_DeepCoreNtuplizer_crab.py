@@ -17,7 +17,7 @@ config.JobType.maxMemoryMB=20000
 config.section_("Data")
 ## config.Data.inputDataset = '/store/user/hichemb/RelValQCD_Pt_1800_2400_14/DeepCoreNtuplizerInput/211013_194728/0000/output'
 ## config.Data.userInputFiles = ['/eos/uscms/store/user/hichemb/RelValQCD_Pt_1800_2400_14/DeepCoreNtuplizerInput/211013_194728/0000/Ntuplizer_output1.root']
-config.Data.inputDataset = '/RelValQCD_Pt_1800_2400_14/hboucham-DeepCoreNtuplizerInput-e101c270c65c32f52437c2373244ff6e/USER'
+config.Data.inputDataset = '/RelValQCD_Pt_1800_2400_14/phys_tracking-DeepCoreNtuplizerInput-64d67f3f018c65608e1ef82a17ea6531/USER'
 config.Data.inputDBS = 'phys03' ##'phys03' ## might need to change to global?
 
 ## If using Lumi based split
