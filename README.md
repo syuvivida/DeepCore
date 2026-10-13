@@ -38,7 +38,7 @@ cmsenv
 git clone -b 17_0_X git@github.com:syuvivida/DeepCore
 mv DeepCore/Ntuplizer .
 rm -rf DeepCore
-cd $CMSSW_BASE
+cd $CMSSW_BASE/src
 scram b -j 8
 ```
 
