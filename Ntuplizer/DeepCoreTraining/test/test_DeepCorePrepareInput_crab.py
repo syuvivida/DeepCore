@@ -29,13 +29,13 @@ config.Data.secondaryInputDataset = '/RelValQCD_Pt_1800_2400_14/CMSSW_17_0_0_pre
 # config.Data.secondaryInputDataset = '/UBGGun_E-1000to7000_Eta-1p2to2p1_13TeV_pythia8/RunIIFall17DRStdmix-NoPU_94X_mc2017_realistic_v11-v2/GEN-SIM-DIGI-RAW'
 
 config.Data.inputDBS = 'global'
-config.Data.splitting = 'EventAwareLumiBased'
+#config.Data.splitting = 'EventAwareLumiBased'
 
 
-#config.Data.splitting = 'EventBased'
-config.Data.unitsPerJob = 5000
-NJOBS = 380 
-config.Data.totalUnits = config.Data.unitsPerJob * NJOBS
+config.Data.splitting = 'Automatic'
+#config.Data.unitsPerJob = 1000
+#NJOBS = 9
+#config.Data.totalUnits = config.Data.unitsPerJob * NJOBS
 
 config.Data.outLFNDirBase = '/store/group/phys_tracking/syu/DeepCore/DeepCoreNtuplizerInput/' 
 #config.Data.outLFNDirBase = '/store/user/%s/DeepCoreNtuplizerInput' % (getUsernameFromCRIC())
