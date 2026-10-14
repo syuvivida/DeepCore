@@ -194,7 +194,7 @@ private:
   
   bool barrelTrain_;
   bool endcapTrain_;
-  bool fullTrain_;
+
 
 
 
@@ -238,8 +238,7 @@ DeepCoreNtuplizer::DeepCoreNtuplizer(const edm::ParameterSet& iConfig) :
       chargeFracMin_(iConfig.getParameter<double>("chargeFractionMin")),
       centralMIPCharge_(iConfig.getParameter<double>("centralMIPCharge")),
       barrelTrain_(iConfig.getParameter<bool>("barrelTrain")),
-      endcapTrain_(iConfig.getParameter<bool>("endcapTrain")),
-      fullTrain_(iConfig.getParameter<bool>("fullTrain"))
+      endcapTrain_(iConfig.getParameter<bool>("endcapTrain"))
 {
   
   //  usesResource("TFileService");
@@ -261,7 +260,7 @@ DeepCoreNtuplizer::DeepCoreNtuplizer(const edm::ParameterSet& iConfig) :
    DeepCoreNtuplizerTree->Branch("event_ID",&eventID);
 
    //debug branches
-   DeepCoreNtuplizerTree->Branch("NPixLay",NPixLay, "NPixLay[7]/I");
+   DeepCoreNtuplizerTree->Branch("NPixLay",NPixLay, Form("NPixLay[%d]/I",Nlayer));
 
 
 
@@ -913,7 +912,6 @@ void DeepCoreNtuplizer::fillDescriptions(edm::ConfigurationDescriptions& descrip
   desc.add<std::string>("pixelCPE", "PixelCPEGeneric");
   desc.add<bool>("barrelTrain", true);
   desc.add<bool>("endcapTrain", false);
-  desc.add<bool>("fullTrain", false);
   desc.setUnknown();
   descriptions.addDefault(desc);
 }

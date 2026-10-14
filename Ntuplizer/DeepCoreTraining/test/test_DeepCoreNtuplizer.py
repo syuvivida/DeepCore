@@ -24,7 +24,7 @@ process.maxEvents = cms.untracked.PSet( input = cms.untracked.int32(100) ) #-1 =
 process.source = cms.Source("PoolSource",
     # replace 'myfile.root',' with the source file you want to use
     fileNames = cms.untracked.vstring(
-        'file:Ntuplizer_step1.root'
+        'file:/eos/cms/store/group/phys_tracking/syu/DeepCore/DeepCoreNtuplizerInput/RelValQCD_Pt_1800_2400_14/DeepCoreNtuplizerInput/261013_183803/0000/Ntuplizer_step1_1.root'
      #'root://cms-xrd-global.cern.ch//store/relval/CMSSW_17_0_0_pre1/RelValQCD_Pt_1800_2400_14/GEN-SIM-RECO/160X_mcRun3_2026_realistic_v6_STD_RegeneratedGS_2026_noPU_20260519_170947-v1/2590000/252ce9ce-810e-4300-abc8-7a75943353d3.root'
      ## 'file:/eos/uscms/store/user/hichemb/RelValQCD_Pt_1800_2400_14/DeepCoreNtuplizerInput/220127_205703/0000/Ntuplizer_output1_1.root'
      ## 'file:/eos/uscms/store/user/hichemb/RelValQCD_Pt_1800_2400_14/DeepCoreNtuplizerInput/211013_194728/0000/output/Ntuplizer_output1.root'
@@ -47,7 +47,6 @@ process.DeepCoreNtuplizerTest = cms.EDProducer('DeepCoreNtuplizer' ,
  deltaR = cms.double(0.1),
  barrelTrain =cms.bool(True),
  endcapTrain =cms.bool(False),
- fullTrain =cms.bool(False),
   
  vertices = cms.InputTag("offlinePrimaryVertices"),
  pixelClusters=cms.InputTag("siPixelClustersPreSplitting"),
