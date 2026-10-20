@@ -69,8 +69,13 @@ process.TFileService = cms.Service("TFileService",
     closeFileFast = cms.untracked.bool(True)
   )
   
-process.MessageLogger.cerr.threshold = "Info"
-process.MessageLogger.debugModules = ["DeepCoreNtuplizerTest"]
+
+#process.MessageLogger.cerr.threshold = cms.untracked.string('INFO')                                             
+#process.MessageLogger.cerr.DeepCoreNtuplizer = cms.untracked.PSet(                                              
+#    limit = cms.untracked.int32(-1) # -1 means print every instance without limit                               
+#)                                                                                                               
+
+
 
 
 process.p = cms.Path(process.DeepCoreNtuplizerTest

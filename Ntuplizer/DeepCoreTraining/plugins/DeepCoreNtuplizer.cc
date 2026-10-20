@@ -19,10 +19,14 @@
 
 // system include files
 #include <memory>
+#include <algorithm>
+#include <vector>
 
 // user include files
 #include "FWCore/Framework/interface/Frameworkfwd.h"
-#include "FWCore/Framework/interface/stream/EDProducer.h"
+#include "FWCore/Framework/interface/one/EDProducer.h"
+#include "FWCore/ServiceRegistry/interface/Service.h"
+#include "CommonTools/UtilAlgos/interface/TFileService.h"
 
 #include "FWCore/Framework/interface/Event.h"
 #include "FWCore/Framework/interface/MakerMacros.h"
@@ -72,10 +76,8 @@
 #include <boost/foreach.hpp>
 #include "boost/multi_array.hpp"
 
-#include "FWCore/ServiceRegistry/interface/Service.h"
-#include "CommonTools/UtilAlgos/interface/TFileService.h"
 
-//#include "SimG4Core/Notification/interface/G4SimTrack.h"
+
 #include "SimDataFormats/Track/interface/SimTrack.h"
 
 // #include "SimDataFormats/Vertex/interface/SimVertex.h"
@@ -92,11 +94,13 @@
 // class declaration
 //
 
-class DeepCoreNtuplizer : public edm::stream::EDProducer<> {
+class DeepCoreNtuplizer : public edm::one::EDProducer<edm::one::SharedResources> {
 public:
   explicit DeepCoreNtuplizer(const edm::ParameterSet&);
   ~DeepCoreNtuplizer();
 
+
+  
   static void fillDescriptions(edm::ConfigurationDescriptions& descriptions);
   
   struct TrackAndState
@@ -123,10 +127,10 @@ public:
   TTree* DeepCoreNtuplizerTree;
   static const int jetDimX =30;//200
   static const int jetDimY =30;//200
-  static const int Nlayer = 4; //7
-  static const int Ntrack = 100;
-  static const int Npar = 5; //added 1/pt
-  static const int Nover = 3; // number of overlapped tracks
+  static const uint Nlayer = 4; //7
+  static const uint Ntrack = 100;
+  static const uint Npar = 5; //added 1/pt
+  static const uint Nover = 3; // number of overlapped tracks
   double clusterMeas[jetDimX][jetDimY][Nlayer];
   double trackPar[jetDimX][jetDimY][Nover][Npar+1]; //NOFLAG
   double trackProb[jetDimX][jetDimY][Nover];
@@ -183,7 +187,6 @@ private:
   edm::EDGetTokenT<std::vector<PSimHit> > PSimHitECToken;
   edm::Handle<std::vector<PSimHit> > simhitsEC;
 
-  std::map<int, double [Nlayer][jetDimX][jetDimY]> trackMap;
     
   double ptMin_;
   double pMin_;
@@ -200,7 +203,7 @@ private:
 
   std::pair<bool, Basic3DVector<float>> findIntersection(const GlobalVector & , const reco::Candidate::Point & ,const GeomDet*);
 
-  void fillPixelMatrix(const SiPixelCluster &, int, auto, const GeomDet*);
+  void fillPixelMatrix(const SiPixelCluster &, uint, auto, const GeomDet*);
 
   std::pair<int,int> local2Pixel(double, double, const GeomDet*);
   
@@ -240,9 +243,10 @@ DeepCoreNtuplizer::DeepCoreNtuplizer(const edm::ParameterSet& iConfig) :
       barrelTrain_(iConfig.getParameter<bool>("barrelTrain")),
       endcapTrain_(iConfig.getParameter<bool>("endcapTrain"))
 {
-  
-  //  usesResource("TFileService");
-   edm::Service<TFileService> fileService;
+
+  // Lock TFileService for thread safety
+  usesResource("TFileService");
+  edm::Service<TFileService> fileService;
 
    DeepCoreNtuplizerTree= fileService->make<TTree>("DeepCoreNtuplizerTree","DeepCoreNtuplizerTree");
    DeepCoreNtuplizerTree->Branch("cluster_measured",clusterMeas,Form("cluster_measured[%d][%d][%d]/D",jetDimX,jetDimY,Nlayer));
@@ -266,11 +270,12 @@ DeepCoreNtuplizer::DeepCoreNtuplizer(const edm::ParameterSet& iConfig) :
 
 
 
-   /// dichiarare cosa produce  produces<asd
-   for(unsigned int ix=0; ix<jetDimX; ix++){
-     for(unsigned int iy=0; iy<jetDimY; iy++){
+   /// reset variables to zero
+   for(int ix=0; ix<jetDimX; ix++){
+     for(int iy=0; iy<jetDimY; iy++){
        // first initialize clusterMeas
-       for(unsigned int ilay=0; ilay < Nlayer; ilay++) clusterMeas[ix][iy][ilay] = 0.0;
+       for(unsigned int ilay=0; ilay < Nlayer; ilay++)
+	 clusterMeas[ix][iy][ilay] = 0.0;
        for(unsigned int iOver=0; iOver < Nover; iOver++){
 	 trackProb[ix][iy][iOver] =0.0;
 	 for(unsigned int ipar=0; ipar<Npar+1; ipar++)
@@ -359,120 +364,118 @@ void DeepCoreNtuplizer::produce(edm::Event& iEvent, const edm::EventSetup& iSetu
 
 
 
-  edm::LogInfo("EventMonitor|seeding") << "number of jets in the event=" << cores->size();
+  edm::LogInfo("DeepCoreNtuplizer") << "number of jets in the event=" << cores->size();
 
   for (unsigned int ji = 0; ji < cores->size(); ji++) { //loop jet
-    if ((*cores)[ji].pt() > ptMin_  && (*cores)[ji].p() > pMin_ && std::abs((*cores)[ji].eta())>absEtaMin && std::abs((*cores)[ji].eta())<absEtaMax ) { 
-      edm::LogInfo("EventMonitor|seeding") << "jet in acceptance" << ", pt= "<< (*cores)[ji].pt() << ", eta=" << (*cores)[ji].eta() << ", p=" <<(*cores)[ji].p(); 
+
+    const reco::Candidate& jet = (*cores)[ji];
+    
+    if (jet.pt() < ptMin_)continue;
+    if (jet.p()  < pMin_ )continue;
+    if (std::abs(jet.eta()) <  absEtaMin)continue;
+    if (std::abs(jet.eta()) >  absEtaMax)continue;
+    edm::LogInfo("DeepCoreNtuplizer") << "jet in acceptance"
+					 << ", pt= " << jet.pt()
+					 << ", eta=" << jet.eta()
+					 << ", p="   << jet.p(); 
       
-      const reco::Candidate& jet = (*cores)[ji];
-      const reco::Vertex& jetVertex = (*vertices)[0];
-      GlobalVector jetDirection(jet.px(), jet.py(), jet.pz());
+ 
+    const reco::Vertex& jetVertex = (*vertices)[0];
+    GlobalVector jetDirection(jet.px(), jet.py(), jet.pz());
 
 
-      std::vector<GlobalVector> splitClustDirSet = splittedClusterDirections(jet, tTopo, parEst, jetVertex, 1);
-      edm::LogInfo("EventMonitor|seeding") << "number of cluster to split on lay1="<<splitClustDirSet.size() << "+jetDir" ;
-      if(splitClustDirSet.size()==0) {
+    std::vector<GlobalVector> splitClustDirSet = splittedClusterDirections(jet, tTopo, parEst, jetVertex, 1);
+    edm::LogInfo("DeepCoreNtuplizer") << "number of merged clusters on lay1="<<splitClustDirSet.size() << "+jetDir" ;
+    if(splitClustDirSet.size()==0) {
         splitClustDirSet = splittedClusterDirections(jet, tTopo, parEst, jetVertex, 2);
-        edm::LogInfo("EventMonitor|seeding") << "missing clusters on lay1, used lay2 to find directions, number of cluster=" << splitClustDirSet.size() << "+jetDir" << std::endl;
+        edm::LogInfo("DeepCoreNtuplizer") << "missing clusters on lay1, used lay2 to find directions, number of cluster=" << splitClustDirSet.size() << "+jetDir" << std::endl;
       }
       splitClustDirSet.push_back(jetDirection);
 
       for(int cc=0; cc<(int)splitClustDirSet.size(); cc++){
-      for(int lp=0; lp<Nlayer; lp++) NPixLay[lp] = 0;
+	for(uint lp=0; lp<Nlayer; lp++) NPixLay[lp] = 0;
 
-      GlobalVector bigClustDir = splitClustDirSet.at(cc);
+	GlobalVector bigClustDir = splitClustDirSet.at(cc);
 
-      std::set<int> trkIDset;
-      LocalPoint jetInter(0,0,0);
-      const auto & simtracksVector = simtracks.product();
 
-      jet_pt = jet.pt();
-      jet_p = jet.p();
-      jet_eta = jet.eta();
-      jet_phi = jet.phi();
-      eventID= iEvent.id().event();
+	LocalPoint jetInter(0,0,0);
+	const auto & simtracksVector = simtracks.product();
 
-      auto jetVert = jetVertex; //trackInfo filling
-      std::vector<std::map<int,SiPixelCluster>> clusterMapVector;
-      std::vector<PSimHit> goodSimHit;
+	jet_pt = jet.pt();
+	jet_p = jet.p();
+	jet_eta = jet.eta();
+	jet_phi = jet.phi();
+	eventID= iEvent.id().event();
 
-      edmNew::DetSetVector<SiPixelCluster>::const_iterator detIt = inputPixelClusters->begin();
+	auto jetVert = jetVertex; //trackInfo filling
+	std::vector<std::map<int,SiPixelCluster>> clusterMapVector;
+	std::vector<PSimHit> goodSimHit;
 
-      const GeomDet* globDet = DetectorSelector(2, jet, bigClustDir, jetVertex, tTopo,parEst, simtracksVector); //select detector mostly hitten by the jet
+	edmNew::DetSetVector<SiPixelCluster>::const_iterator detIt = inputPixelClusters->begin();
 
-      //fill the good det vector
-      std::vector<const GeomDet*> goodDets;
-      for(int l=1; l<Nlayer+1; l++){
-        const GeomDet* goodDet = DetectorSelector(l, jet, bigClustDir, jetVertex, tTopo,parEst, simtracksVector);
-        goodDets.push_back(goodDet);
+	// what to do if layer 1 is bad?
+	const GeomDet* globDet = DetectorSelector(2, jet, bigClustDir, jetVertex, tTopo,parEst, simtracksVector); //select detector mostly hitten by the jet
 
-      }
+	//fill the good det vector
+	std::vector<const GeomDet*> goodDets;
+	for(uint l=1; l<Nlayer+1; l++){
+	  const GeomDet* goodDet = DetectorSelector(l, jet, bigClustDir, jetVertex, tTopo,parEst, simtracksVector);
+	  goodDets.push_back(goodDet);	  
+	}
 
-      for (; detIt != inputPixelClusters->end(); detIt++) { //loop deset
-        const edmNew::DetSet<SiPixelCluster>& detset = *detIt;
-        const GeomDet* det = geometry_->idToDet(detset.id()); 
+	for (; detIt != inputPixelClusters->end(); detIt++) { //loop deset
+	  const edmNew::DetSet<SiPixelCluster>& detset = *detIt;
+	  const GeomDet* det = geometry_->idToDet(detset.id()); 
 
-        bool goodDetBool = false;
-        for(int l=0; l<(int)goodDets.size(); l++){
-          if(goodDets.at(l)==det) goodDetBool = true;
-        }
+	  bool goodDetBool = false;
+	  goodDetBool = (std::find(goodDets.begin(), goodDets.end(), det) != goodDets.end());
 
-        for (auto cluster = detset.begin(); cluster != detset.end(); cluster++) { //loop cluster
+	  for (auto cluster = detset.begin(); cluster != detset.end(); cluster++)
+	    { //loop cluster
+	      const SiPixelCluster& aCluster = *cluster;
+	    //          det_id_type aClusterID= detset.id();
+	    // if(DetId(aClusterID).subdetId()!=1) continue; #select only  barrel clusters
+	      uint lay = tTopo->layer(det->geographicalId());
+	      if(det->geographicalId().subdetId()==PixelSubdetector::PixelEndcap)
+		lay=lay+4; //endcap layer counting = 5,6,7
+	      
+	      std::pair<bool, Basic3DVector<float>> interPair = findIntersection(bigClustDir,(reco::Candidate::Point)jetVertex.position(), det);
 
-          const SiPixelCluster& aCluster = *cluster;
-	  //          det_id_type aClusterID= detset.id();
-          // if(DetId(aClusterID).subdetId()!=1) continue; #select only  barrel clusters
+	      if(interPair.first==false) continue;
 
-          int lay = tTopo->layer(det->geographicalId());
-          if(det->geographicalId().subdetId()==PixelSubdetector::PixelEndcap) {
-            lay=lay+4; //endcap layer counting = 5,6,7
-            }
+	      Basic3DVector<float> inter = interPair.second;
 
-          std::pair<bool, Basic3DVector<float>> interPair = findIntersection(bigClustDir,(reco::Candidate::Point)jetVertex.position(), det);
+	      auto localInter = det->specificSurface().toLocal((GlobalPoint)inter);
+	      LocalPoint cPos_local = parEst->localParametersV(aCluster,(*geometry_->idToDetUnit(detIt->id())))[0].first;
 
-          if(interPair.first==false) continue;
-
-          Basic3DVector<float> inter = interPair.second;
-
-          auto localInter = det->specificSurface().toLocal((GlobalPoint)inter);
-
-          LocalPoint cPos_local = parEst->localParametersV(aCluster,(*geometry_->idToDetUnit(detIt->id())))[0].first;
-
-           edm::LogInfo("EventMonitor|seeding").log([&](auto & logger){
-              GlobalPoint pointVertex(jetVertex.position().x(), jetVertex.position().y(), jetVertex.position().z());
-              GlobalPoint cPos = det->surface().toGlobal(parEst->localParametersV(aCluster,(*geometry_->idToDetUnit(detIt->id())))[0].first);
-              // GlobalVector intersectionDir = (GlobalPoint) inter - pointVertex;
+	      edm::LogInfo("DeepCoreNtuplizer").log([&](auto & logger){
+		GlobalPoint pointVertex(jetVertex.position().x(), jetVertex.position().y(), jetVertex.position().z());
+		GlobalPoint cPos = det->surface().toGlobal(parEst->localParametersV(aCluster,(*geometry_->idToDetUnit(detIt->id())))[0].first);
+		// GlobalVector intersectionDir = (GlobalPoint) inter - pointVertex;
               // auto deltaR_glob = Geom::deltaR(bigClustDir, intersectionDir);
-              GlobalVector clusterDir = cPos - pointVertex;
-              auto deltaR_clust = Geom::deltaR(bigClustDir, clusterDir);
-              logger << "cluster with DeltaR(clust,window center direction)" << deltaR_clust;
-           });
+		GlobalVector clusterDir = cPos - pointVertex;
+		auto deltaR_clust = Geom::deltaR(bigClustDir, clusterDir);
+		logger << "cluster with DeltaR(clust,window center direction)" << deltaR_clust;
+	      });
 
-          if(std::abs(cPos_local.x()-localInter.x())/pitchX<=jetDimX/2 && std::abs(cPos_local.y()-localInter.y())/pitchY<=jetDimY/2){ //cPos_local.x,y use barycenter, other solutions can be developed
-            NPixLay[lay-1]= NPixLay[lay-1]+1;
-            if(goodDetBool) {
-              fillPixelMatrix(aCluster,lay,localInter, det);
-              }
-          }//cluster in ROI
-        } //cluster
-      } //detset
+	    // look for 30 x 30 pixels around the cluster direction
+	      if(std::abs(cPos_local.x()-localInter.x())/pitchX > jetDimX/2)
+		continue;
+	      if(std::abs(cPos_local.y()-localInter.y())/pitchY > jetDimY/2)
+		continue;
+	      
+	      NPixLay[lay-1]= NPixLay[lay-1]+1;
+	      if(goodDetBool)
+		fillPixelMatrix(aCluster,lay,localInter, det);
+	    } //cluster
+	} //detset 
 
 
-      // ------------------------  good sim hit selection (hit inside window) --------------------------------------//
-      std::vector<PSimHit> simhitsALL;
-      std::vector<PSimHit>::const_iterator shItB = simhits->begin();
-      for (; shItB != simhits->end(); shItB++) { //loop on simit to find correspondent det (barrel)
-        simhitsALL.push_back((*shItB));
-      }
-      // std::vector<PSimHit>::const_iterator shItEC = simhitsEC->begin(); #needed if you want the target with simhitsEC 
-      // for (; shItEC != simhitsEC->end(); shItEC++) { //loop on simit to find correspondent det (endCaps)
-      //   simhitsALL.push_back((*shItEC));
-      // }
+      // -----good sim hit selection (hit inside window) -----------//
+	std::vector<PSimHit>::const_iterator shIt = simhits->begin();
 
-      std::vector<PSimHit>::const_iterator shIt = simhitsALL.begin();
       // std::set<const GeomDet*> simhitsDetSet;
-      for (; shIt != simhitsALL.end(); shIt++) { //loop deset
+      for (; shIt != simhits->end(); shIt++) { //loop deset
         // const edmNew::DetSet<PSimHit>& detset = *shIt;
         const GeomDet* det = geometry_->idToDet((*shIt).detUnitId());
         if(det!=globDet) continue;
@@ -481,227 +484,232 @@ void DeepCoreNtuplizer::produce(edm::Event& iEvent, const edm::EventSetup& iSetu
         Basic3DVector<float> inter = interPair.second;
         auto localInter = det->specificSurface().toLocal((GlobalPoint)inter);
         if(jetInter.x()==0 && jetInter.y()==0 && jetInter.z()==0) jetInter = localInter; //filling infoTracks
+	// look for simHits within 30x30 pixels
+        if(std::abs(((*shIt).localPosition()).x()-localInter.x())/pitchX>jetDimX/2)
+	  continue;
+	if(std::abs(((*shIt).localPosition()).y()-localInter.y())/pitchY>jetDimY/2)
+	  continue;
+	edm::LogInfo("DeepCoreNtuplizer") << "good sim hit on layer 2,  track ID" << (*shIt).trackId();
+	goodSimHit.push_back((*shIt));
+      
+      } // end of loop over simHits
 
-        if(std::abs(((*shIt).localPosition()).x()-localInter.x())/pitchX<=jetDimX/2 && std::abs(((*shIt).localPosition()).y()-localInter.y())/pitchY<=jetDimY/2){
-          edm::LogInfo("EventMonitor|seeding") << "good sim hit on layer 2,  track ID" << (*shIt).trackId();
-          goodSimHit.push_back((*shIt));
+      fillTrackInfo(jet, simtracksVector, jetInter, bigClustDir, jetVert, globDet, parEst, goodSimHit,tTopo);
 
-        }
+      edm::LogInfo("DeepCoreNtuplizer") << "Number of good simHits on Layer 2 = " << goodSimHit.size();
+
+      clusterMapVector.clear();
+      DeepCoreNtuplizerTree->Fill();
+      edm::LogInfo("DeepCoreNtuplizer").log([&](auto& li) {
+	li << "N.pixel on layer ";
+	for (size_t i = 0; i < Nlayer; ++i)
+	  li << i << "=" << NPixLay[i] << ", ";
+	li << "\n";
+      });    
+
+      // reset to zero 
+      for(int ix=0; ix<jetDimX; ix++){
+	for(int iy=0; iy<jetDimY; iy++){	
+	  for(unsigned int ilay=0; ilay < Nlayer; ilay++)
+	    clusterMeas[ix][iy][ilay] = 0.0;	
+	  for(unsigned int iOver=0; iOver<Nover; iOver++){
+	    trackProb[ix][iy][iOver] =0.0;
+	    for(unsigned int ipar=0; ipar < Npar+1; ipar++)
+	      trackPar[ix][iy][iOver][ipar] =0.0; //NOFLAG
+	  } 
+	}
       }
+      for(unsigned int h=0; h<Ntrack; h++){
+	track_pt[h] = 0.0;
+	track_pz[h] = 0.0;
+	track_eta[h] = 0.0;
+	track_phi[h] = 0.0;
+      }    
+      } // end of loop over big cluster directions
+  } // end of loop over jets
 
-    fillTrackInfo(jet, simtracksVector, jetInter, bigClustDir, jetVert, globDet, parEst, goodSimHit,tTopo);
-
-
-
-    clusterMapVector.clear();
-    DeepCoreNtuplizerTree->Fill();
-    edm::LogInfo("EventMonitor|seeding").log([&](auto& li) {
-      li << "N.pixel on layer ";
-      for (size_t i = 0; i < Nlayer; ++i) {
-        li << i << "=" << NPixLay[i] << ", ";
-      }
-      li << "\n";
-    });    
-
-
-    for(unsigned int ix=0; ix<jetDimX; ix++){
-      for(unsigned int iy=0; iy<jetDimY; iy++){	
-	for(unsigned int ilay=0; ilay < Nlayer; ilay++) clusterMeas[ix][iy][ilay] = 0.0;	
-	for(unsigned int iOver=0; iOver<Nover; iOver++){
-	  trackProb[ix][iy][iOver] =0.0;
-	  for(unsigned int ipar=0; ipar < Npar+1; ipar++)
-            trackPar[ix][iy][iOver][ipar] =0.0; //NOFLAG
-	} 
-      }
-    }
-    for(unsigned int h=0; h<Ntrack; h++){
-      track_pt[h] = 0.0;
-      track_pz[h] = 0.0;
-      track_eta[h] = 0.0;
-      track_phi[h] = 0.0;
-    }    
-    
-    trkIDset.clear();
-      } //bigcluster
-    } //jet > pt
-  } //jet
-trackMap.clear();
 }
 
 
 
 
-  std::pair<bool, Basic3DVector<float>> DeepCoreNtuplizer::findIntersection(const GlobalVector & dir,const  reco::Candidate::Point & vertex, const GeomDet* det){
-     StraightLinePlaneCrossing vertexPlane(Basic3DVector<float>(vertex.x(),vertex.y(),vertex.z()), Basic3DVector<float>(dir.x(),dir.y(),dir.z()));
+std::pair<bool, Basic3DVector<float>> DeepCoreNtuplizer::findIntersection(const GlobalVector & dir,const  reco::Candidate::Point & vertex, const GeomDet* det){
+  StraightLinePlaneCrossing vertexPlane(Basic3DVector<float>(vertex.x(),vertex.y(),vertex.z()), Basic3DVector<float>(dir.x(),dir.y(),dir.z()));
 
-     std::pair<bool, Basic3DVector<float>> pos = vertexPlane.position(det->specificSurface());
+  if (!det) return {false, Basic3DVector<float>(0, 0, 0)};
+  
+  std::pair<bool, Basic3DVector<float>> pos = vertexPlane.position(det->specificSurface());
 
-     return pos;
-  }
+  return pos;
+}
 
 
 
-  std::pair<int,int> DeepCoreNtuplizer::local2Pixel(double locX, double locY, const GeomDet* det){
-    LocalPoint locXY(locX,locY);
-    float pixX=(dynamic_cast<const PixelGeomDetUnit*>(det))->specificTopology().pixel(locXY).first;
-    float pixY=(dynamic_cast<const PixelGeomDetUnit*>(det))->specificTopology().pixel(locXY).second;
-    std::pair<int, int> out(pixX,pixY);
-    return out;
-  }
+std::pair<int,int> DeepCoreNtuplizer::local2Pixel(double locX, double locY, const GeomDet* det){
+  LocalPoint locXY(locX,locY);
+  float pixX=(dynamic_cast<const PixelGeomDetUnit*>(det))->specificTopology().pixel(locXY).first;
+  float pixY=(dynamic_cast<const PixelGeomDetUnit*>(det))->specificTopology().pixel(locXY).second;
+  std::pair<int, int> out(pixX,pixY);
+  return out;
+}
 
-  LocalPoint DeepCoreNtuplizer::pixel2Local(int pixX, int pixY, const GeomDet* det){
-    float locX=(dynamic_cast<const PixelGeomDetUnit*>(det))->specificTopology().localX(pixX);
-    float locY=(dynamic_cast<const PixelGeomDetUnit*>(det))->specificTopology().localY(pixY);
-    LocalPoint locXY(locX,locY);
-    return locXY;
-  }
+LocalPoint DeepCoreNtuplizer::pixel2Local(int pixX, int pixY, const GeomDet* det){
+  float locX=(dynamic_cast<const PixelGeomDetUnit*>(det))->specificTopology().localX(pixX);
+  float locY=(dynamic_cast<const PixelGeomDetUnit*>(det))->specificTopology().localY(pixY);
+  LocalPoint locXY(locX,locY);
+  return locXY;
+}
  
-  // pixel size fix
-    std::pair<bool,bool> DeepCoreNtuplizer::pixel2Size(int pixX, int pixY, const GeomDet* det){
-    bool pix_x_size=(dynamic_cast<const PixelGeomDetUnit*>(det))->specificTopology().isItBigPixelInX(pixX);
-    bool pix_y_size=(dynamic_cast<const PixelGeomDetUnit*>(det))->specificTopology().isItBigPixelInY(pixY);
-    std::pair<bool,bool> pix_xy_size(pix_x_size,pix_y_size);
-    return pix_xy_size;
-  }
+// pixel size fix
+std::pair<bool,bool> DeepCoreNtuplizer::pixel2Size(int pixX, int pixY, const GeomDet* det){
+  bool pix_x_size=(dynamic_cast<const PixelGeomDetUnit*>(det))->specificTopology().isItBigPixelInX(pixX);
+  bool pix_y_size=(dynamic_cast<const PixelGeomDetUnit*>(det))->specificTopology().isItBigPixelInY(pixY);
+  std::pair<bool,bool> pix_xy_size(pix_x_size,pix_y_size);
+  return pix_xy_size;
+}
 
-  int DeepCoreNtuplizer::pixelFlipper(const GeomDet* det){
-    int out =1;
-    LocalVector locZdir(0,0,1);
-    GlobalVector globZdir  = det->specificSurface().toGlobal(locZdir);
-    GlobalPoint globDetCenter = det->position();
-    float direction = globZdir.x()*globDetCenter.x()+ globZdir.y()*globDetCenter.y()+ globZdir.z()*globDetCenter.z();
-    //float direction = globZdir.dot(globDetCenter);
-    if(direction<0) out =-1;
-    // out=1;
-    return out;
-   }
+int DeepCoreNtuplizer::pixelFlipper(const GeomDet* det){
+  int out =1;
+  LocalVector locZdir(0,0,1);
+  GlobalVector globZdir  = det->specificSurface().toGlobal(locZdir);
+  GlobalPoint globDetCenter = det->position();
+  float direction = globZdir.x()*globDetCenter.x()+ globZdir.y()*globDetCenter.y()+ globZdir.z()*globDetCenter.z();
+  //float direction = globZdir.dot(globDetCenter);
+  if(direction<0) out =-1;
+  // out=1;
+  return out;
+}
 
 
 
-  void DeepCoreNtuplizer::fillPixelMatrix(const SiPixelCluster & cluster, int layer, auto inter, const GeomDet* det){
+void DeepCoreNtuplizer::fillPixelMatrix(const SiPixelCluster & cluster, uint layer, auto inter, const GeomDet* det){
 
-    int flip = pixelFlipper(det); // 1=not flip, -1=flip
+  int flip = pixelFlipper(det); // 1=not flip, -1=flip
 
-    for(int i=0; i<cluster.size();i++){
-      SiPixelCluster::Pixel pix = cluster.pixel(i);
-      std::pair<int,int> pixInter = local2Pixel(inter.x(),inter.y(),det);
-      int nx = pix.x-pixInter.first;
-      int ny = pix.y-pixInter.second;
-      nx=flip*nx;
+  for(int i=0; i<cluster.size();i++){
+    SiPixelCluster::Pixel pix = cluster.pixel(i);
+    std::pair<int,int> pixInter = local2Pixel(inter.x(),inter.y(),det);
+    int nx = pix.x-pixInter.first;
+    int ny = pix.y-pixInter.second;
+    nx=flip*nx;
 
-      if(abs(nx)<jetDimX/2 && abs(ny)<jetDimY/2){
-        nx = nx+jetDimX/2;
-        ny = ny+jetDimY/2;
-        if(nx<jetDimX && ny<jetDimY && layer-1< Nlayer && layer-1>=0 && nx>=0 && ny>=0) clusterMeas[nx][ny][layer-1] += (pix.adc)/(float)(14000);
-      }
+    if(abs(nx)<jetDimX/2 && abs(ny)<jetDimY/2){
+      nx = nx+jetDimX/2;
+      ny = ny+jetDimY/2;
+      if(nx<jetDimX && ny<jetDimY && layer-1< Nlayer && nx>=0 && ny>=0) clusterMeas[nx][ny][layer-1] += (pix.adc)/(float)(14000);
     }
-
   }
 
-  void DeepCoreNtuplizer::fillTrackInfo(const reco::Candidate& jet, const auto & stVector, auto jti, auto jetDir, auto jVert, const GeomDet* det, const PixelClusterParameterEstimator* cpe,  std::vector<PSimHit> goodSimHit, const TrackerTopology* const tTopo){
+}
 
-    bool oneHitInfo = false; //track par given only where prob=1
+void DeepCoreNtuplizer::fillTrackInfo(const reco::Candidate& jet, const auto & stVector, auto jti, auto jetDir, auto jVert, const GeomDet* det, const PixelClusterParameterEstimator* cpe,  std::vector<PSimHit> goodSimHit, const TrackerTopology* const tTopo){
 
-    struct trkInfoObj
+  bool oneHitInfo = false; //track par given only where prob=1
+
+  struct trkInfoObj
+  {
+    int prob;
+    double dist;
+    double xpos;
+    double ypos;
+    double xangle;
+    double yangle;
+    int zero_flag; //useful for CNN training only: 0 if x,y,eta,phi==0
+    double one_over_pt;
+    trkInfoObj(int pp, double dd, double xx, double yy, double tx, double ty, int zf, double ptInv) : //, double jeta, double jpt) : // double xd, double yd, double n) :
+      prob(pp),
+      dist(dd),
+      xpos(xx),
+      ypos(yy),
+      xangle(tx),
+      yangle(ty),
+      zero_flag(zf),
+      one_over_pt(ptInv) {}
+
+    bool operator < (const trkInfoObj& trk) const
     {
-      int prob;
-      double dist;
-      double xpos;
-      double ypos;
-      double xangle;
-      double yangle;
-      int zero_flag; //useful for CNN training only: 0 if x,y,eta,phi==0
-      double one_over_pt;
-      trkInfoObj(int pp, double dd, double xx, double yy, double tx, double ty, int zf, double ptInv) : //, double jeta, double jpt) : // double xd, double yd, double n) :
-        prob(pp),
-        dist(dd),
-        xpos(xx),
-        ypos(yy),
-        xangle(tx),
-        yangle(ty),
-        zero_flag(zf),
-        one_over_pt(ptInv) {}
+      return (dist < trk.dist);
+    }
+  };
 
-      bool operator < (const trkInfoObj& trk) const
-      {
-        return (dist < trk.dist);
-      }
-    };
+  std::vector<SimTrack> goodSimTrk;
 
-   std::vector<SimTrack> goodSimTrk;
+  for(uint j=0; j<stVector->size(); j++){ //matched tracks selection and vertex assigment
 
-    int trk =0;
-    for(uint j=0; j<stVector->size(); j++){ //matched tracks selection and vertex assigment
-      for(std::vector<PSimHit>::const_iterator it=goodSimHit.begin(); it!=goodSimHit.end(); ++it) {
-        SimTrack st = stVector->at(j);
-        if(st.trackId()==(*it).trackId()) {
-          if(st.momentum().Pt()<1 or st.momentum().Pt()>100000) continue; //higher cut is to avoid problematic tracks
-          goodSimTrk.push_back(st);
-        }
+    SimTrack st = stVector->at(j);
+    if(st.momentum().Pt()<1 or st.momentum().Pt()>100000) continue; //higher cut is to avoid problematic tracks
+    bool matchGoodSimHit=false;
+    for(std::vector<PSimHit>::const_iterator it=goodSimHit.begin(); it!=goodSimHit.end(); ++it) {
+      if(st.trackId()==(*it).trackId()) {
+	matchGoodSimHit=true;
+	break;
       }
     }
-    jet_Ntrack=goodSimTrk.size();
-    for(uint j=0; j<goodSimTrk.size(); j++){
-      SimTrack st = goodSimTrk.at(j);
-      if(j<100){
-        if(trk<Ntrack) track_pt[j] = st.momentum().Pt();
-        if(trk<Ntrack) track_pz[j] = st.momentum().Pz();
-        if(trk<Ntrack) track_eta[j] = st.momentum().Eta();
-        if(trk<Ntrack) track_phi[j] = st.momentum().Phi();
-      }
-    }
+    if(matchGoodSimHit)
+      goodSimTrk.push_back(st);
+  }  
 
-    for(int x=0; x<jetDimX; x++){
-      for(int y=0; y<jetDimY; y++){
-        std::vector<trkInfoObj> tracksInfo;
-        for(uint j=0; j<goodSimTrk.size(); j++){
-          SimTrack st = goodSimTrk.at(j);
-          GlobalVector trkMom(st.trackerSurfaceMomentum().x(),st.trackerSurfaceMomentum().y(), st.trackerSurfaceMomentum().z());
-          int flip = pixelFlipper(det); // 1=not flip, -1=flip
+  
+  jet_Ntrack=goodSimTrk.size();
+  for(uint j=0; j<goodSimTrk.size() && j<Ntrack; j++){
+    SimTrack st = goodSimTrk.at(j);
+    track_pt[j] = st.momentum().Pt();
+    track_pz[j] = st.momentum().Pz();
+    track_eta[j] = st.momentum().Eta();
+    track_phi[j] = st.momentum().Phi();
+  }
 
-          PSimHit theSimHit;
-          for(uint sh=0; sh<goodSimHit.size(); sh++){
-            if(goodSimHit[sh].trackId()==st.trackId() && (int)goodSimHit[sh].detUnitId()==(int)det->geographicalId()){
-              theSimHit = goodSimHit[sh];
-            }
-          }
 
-          LocalPoint localTrkInter(flip*(theSimHit.localPosition()).x(),(theSimHit.localPosition()).y(),(theSimHit.localPosition()).z());
-          LocalPoint Jinter(flip*jti.x(),jti.y(),jti.z());
+  for(int x=0; x<jetDimX; x++){
+    for(int y=0; y<jetDimY; y++){
+      std::vector<trkInfoObj> tracksInfo;
+      for(uint j=0; j<goodSimTrk.size(); j++){
+	SimTrack st = goodSimTrk.at(j);
+	GlobalVector trkMom(st.trackerSurfaceMomentum().x(),st.trackerSurfaceMomentum().y(), st.trackerSurfaceMomentum().z());
+	int flip = pixelFlipper(det); // 1=not flip, -1=flip
 
-          std::pair<int,int> pixJInter = local2Pixel(Jinter.x(),Jinter.y(),det);
-          std::pair<int,int> pixTrkInter = local2Pixel(localTrkInter.x(),localTrkInter.y(),det); //ADDED PITCH
+	PSimHit theSimHit;
+	for(uint sh=0; sh<goodSimHit.size(); sh++){
+	  if(goodSimHit[sh].trackId()==st.trackId() && (int)goodSimHit[sh].detUnitId()==(int)det->geographicalId()){
+	    theSimHit = goodSimHit[sh];
+	  }
+	}
 
-          int pixX = (pixTrkInter.first-pixJInter.first);
-          int pixY = (pixTrkInter.second-pixJInter.second);
+	LocalPoint localTrkInter(flip*(theSimHit.localPosition()).x(),(theSimHit.localPosition()).y(),(theSimHit.localPosition()).z());
+	LocalPoint Jinter(flip*jti.x(),jti.y(),jti.z());
 
-          pixX = pixX+jetDimX/2;
-          pixY = pixY+jetDimY/2;
+	std::pair<int,int> pixJInter = local2Pixel(Jinter.x(),Jinter.y(),det);
+	std::pair<int,int> pixTrkInter = local2Pixel(localTrkInter.x(),localTrkInter.y(),det); //ADDED PITCH
 
-          double info[8] = {0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0};
+	int pixX = (pixTrkInter.first-pixJInter.first);
+	int pixY = (pixTrkInter.second-pixJInter.second);
 
-          if (x==pixX && y==pixY) {
-            info[0]= 1;
-          }
-          else info[0] = 0;
+	pixX = pixX+jetDimX/2;
+	pixY = pixY+jetDimY/2;
+
+	double info[8] = {0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0};
+
+	if (x==pixX && y==pixY)
+	  info[0]= 1;         
+	else info[0] = 0;
           
         // pixel size fix 
-          std::pair<bool, bool> sz_xy = pixel2Size(x+pixJInter.first-jetDimX/2,y+pixJInter.second-jetDimY/2,det);
-          bool sz_x = sz_xy.first;
-          bool sz_y = sz_xy.second;
-          double pix_center_x;
-          double pix_center_y;
+	std::pair<bool, bool> sz_xy = pixel2Size(x+pixJInter.first-jetDimX/2,y+pixJInter.second-jetDimY/2,det);
+	bool sz_x = sz_xy.first;
+	bool sz_y = sz_xy.second;
+	double pix_center_x;
+	double pix_center_y;
 
-          if (sz_x == 1){
+          if (sz_x == 1)
             pix_center_x = pitchX;
-          }else{
+          else
             pix_center_x = 0.5*pitchX;
-          } 
-          if (sz_y == 1){
+           
+          if (sz_y == 1)
             pix_center_y = pitchY;
-          }else{
+          else
             pix_center_y = 0.5*pitchY;
-          }
+          
 
           LocalPoint pix2loc = pixel2Local(x+pixJInter.first-jetDimX/2,y+pixJInter.second-jetDimY/2,det);
           double distX =  localTrkInter.x()-pix2loc.x()- pix_center_x; // pixel size fix
@@ -712,12 +720,12 @@ trackMap.clear();
          // std::cout << " is x big? " << sz_xy.first << " is y big? " << sz_xy.second << std::endl;
          // std::cout << " dy [cm]= " << distY << " Track crossing ( " << localTrkInter.y() << ") - pixel location ( " << pix2loc.y() << " ) - 0.0075 " << std::endl;
 
-           if(distX<0.000001 && distX> -0.000001) {
-             distX = 0.0;
-           }
-           if(distY<0.000001 && distY> - 0.000001){
-             distY = 0.0;
-           }
+	  if(distX<0.000001 && distX> -0.000001)
+	    distX = 0.0;
+	  
+	  if(distY<0.000001 && distY> - 0.000001)
+	    distY = 0.0;
+	  
           info[1] = sqrt(distX*distX+distY*distY);
 
           if(fabs(distX)<distThr*pitchX && fabs(distY)<distThr*pitchY){
@@ -731,7 +739,7 @@ trackMap.clear();
           }
           else{
           if(info[0]== 1) {
-             edm::LogError("EventMonitor|seeding") << "prob=1 outside of radious of " << distThr << "pixel from track intersection, probable bug";
+             edm::LogError("DeepCoreNtuplizer") << "prob=1 outside of radious of " << distThr << "pixel from track intersection, probable bug";
           }
           info[2] = 99999999;
           info[3] = 99999999;
@@ -749,145 +757,142 @@ trackMap.clear();
 
           tracksInfo.push_back(trkInfoObj(info[0],info[1],info[2],info[3],info[4],info[5],info[6],info[7]));
 
-        }//good tracks
+      }//good sim tracks
 
-        std::sort(tracksInfo.begin(), tracksInfo.end());
+      std::sort(tracksInfo.begin(), tracksInfo.end());
 
-        int trkLim=Nover;
-        if (tracksInfo.size()<3) trkLim = tracksInfo.size();
+    
+      for(uint trk=0; trk< Nover && trk<tracksInfo.size(); trk++){
 
-        for(trk=0; trk<trkLim; trk++){
-          if(x<jetDimX && y<jetDimY && trk<Nover && x>=0 && y>=0) {
-            if(tracksInfo.at(trk).xpos!=99999999) trackPar[x][y][trk][0]=100*tracksInfo.at(trk).xpos;
-            else trackPar[x][y][trk][0]=0.0;
-            if(tracksInfo.at(trk).ypos!=99999999) trackPar[x][y][trk][1]=100*tracksInfo.at(trk).ypos;
-            else trackPar[x][y][trk][1]=0.0;
-            trackPar[x][y][trk][2]=100*tracksInfo.at(trk).xangle;
-            trackPar[x][y][trk][3]=100*tracksInfo.at(trk).yangle;
-            trackPar[x][y][trk][4]=tracksInfo.at(trk).one_over_pt;
-            trackPar[x][y][trk][5]=tracksInfo.at(trk).zero_flag; //NOFLAG
-            trackProb[x][y][trk]=tracksInfo.at(trk).prob;
+	if(tracksInfo.at(trk).xpos!=99999999)
+	  trackPar[x][y][trk][0]=100*tracksInfo.at(trk).xpos;
+	else trackPar[x][y][trk][0]=0.0;
+	
+	if(tracksInfo.at(trk).ypos!=99999999)
+	  trackPar[x][y][trk][1]=100*tracksInfo.at(trk).ypos;
+	else trackPar[x][y][trk][1]=0.0;
 
-            if(oneHitInfo){
-              if(trackProb[x][y][trk]==0) {
-                for(int pp=0; pp<Npar+1; pp++){ //NOFLAG
-                  trackPar[x][y][trk][pp] = 0.0;
-                }
-              }
-            }
+	trackPar[x][y][trk][2]=100*tracksInfo.at(trk).xangle;
+	trackPar[x][y][trk][3]=100*tracksInfo.at(trk).yangle;
+	trackPar[x][y][trk][4]=tracksInfo.at(trk).one_over_pt;
+	trackPar[x][y][trk][5]=tracksInfo.at(trk).zero_flag; //NOFLAG
+	trackProb[x][y][trk]=tracksInfo.at(trk).prob;
 
-            if(tracksInfo.at(trk).zero_flag!=0){
-              edm::LogInfo("EventMonitor|seeding") << "Filling track info with zero-flag!=0, track=" << trk << ", prob="<<tracksInfo.at(trk).prob<< ", x bin="<< x << ", y bin=" << y<< ", "<<  "x position=" << tracksInfo.at(trk).xpos << " y position=" << tracksInfo.at(trk).ypos << std::endl;
-            }
-         }
-        }//trk (filling)
+	if(oneHitInfo){
+	  if(trackProb[x][y][trk]==0) {
+	    for(uint pp=0; pp<Npar+1; pp++)
+	      trackPar[x][y][trk][pp] = 0.0;
+	  }
+	}
+
+	if(tracksInfo.at(trk).zero_flag!=0)
+	  edm::LogInfo("DeepCoreNtuplizer") << "Filling track info with zero-flag!=0, track=" << trk << ", prob="<<tracksInfo.at(trk).prob<< ", x bin="<< x << ", y bin=" << y<< ", "<<  "x position=" << tracksInfo.at(trk).xpos << " y position=" << tracksInfo.at(trk).ypos << std::endl;
+      }//trk (filling)
       tracksInfo.clear();
     } // y
-    }//x
-    goodSimTrk.clear();
-  }
+  }//x
+  goodSimTrk.clear();
+}
 
 
-  const GeomDet* DeepCoreNtuplizer::DetectorSelector(int llay, const reco::Candidate& jet, GlobalVector jetDir, const reco::Vertex& jetVertex, const TrackerTopology* const tTopo, const PixelClusterParameterEstimator* parEst, const auto & simtracksVector){
-
-    struct distCompare {
+const GeomDet* DeepCoreNtuplizer::DetectorSelector(int llay, const reco::Candidate& jet, GlobalVector jetDir, const reco::Vertex& jetVertex, const TrackerTopology* const tTopo, const PixelClusterParameterEstimator* parEst, const auto & simtracksVector){
+  struct distCompare {
     bool operator()(std::pair<double,const GeomDet*> x, std::pair<double,const GeomDet*> y) const
     {return x.first < y.first;} //order in ascending distance
-    };
+  };
 
-    std::set<std::pair<double,const GeomDet*>, distCompare> distDetSet;//distance square from center of det
+  std::set<std::pair<double,const GeomDet*>, distCompare> distDetSet;//distance square from center of det
+  LocalPoint jetInter(0,0,0);
 
-    LocalPoint jetInter(0,0,0);
+  std::vector<PSimHit>::const_iterator shIt = simhits->begin();
+  std::vector<PSimHit>::const_iterator shItEC = simhitsEC->begin();
 
-    std::vector<PSimHit>::const_iterator shIt = simhits->begin();
-    std::vector<PSimHit>::const_iterator shItEC = simhitsEC->begin();
+  std::set<const GeomDet*> simhitsDetSet;
 
-    std::set<const GeomDet*> simhitsDetSet;
-
-    for (; shIt != simhits->end(); shIt++) { //loop on simit to find correspondent det (barrel)
-      const GeomDet* det = geometry_->idToDet((*shIt).detUnitId());
-      simhitsDetSet.insert(det);
-    }
-
-    for (; shItEC != simhitsEC->end(); shItEC++) { //loop on simit to find correspondent det (endCaps)
-      const GeomDet* det = geometry_->idToDet((*shItEC).detUnitId());
-      simhitsDetSet.insert(det);
-    }
-
-    for (std::set<const GeomDet*>::iterator detIt=simhitsDetSet.begin(); detIt != simhitsDetSet.end(); detIt++) { //loop deset
-
-      const GeomDet* det = *detIt;
-
-        int lay = tTopo->layer(det->geographicalId());
-        if(det->geographicalId().subdetId()==PixelSubdetector::PixelEndcap){
-           lay=lay+4; //endcap layer counting = 5,6,7
-        }
-        std::pair<bool, Basic3DVector<float>> interPair = findIntersection(jetDir,(reco::Candidate::Point)jetVertex.position(), det);
-        if(interPair.first==false) continue;
-        Basic3DVector<float> inter = interPair.second;
-        auto localInter = det->specificSurface().toLocal((GlobalPoint)inter);
-
-          if(lay==llay) {
-            double dist2 = localInter.x()*localInter.x()+localInter.y()*localInter.y();
-            std::pair<double,const GeomDet*> distDet(dist2, det);
-            distDetSet.insert(distDet);
-          }
-
-    } //detset
-
-    if(distDetSet.size()!=0) edm::LogInfo("EventMonitor|seeding") << "Intersecting detector, layer ="<< llay << "  det=" << distDetSet.begin()->second->gdetIndex() << ", distance =" << distDetSet.begin()->first << std::endl;
-    if(distDetSet.size()==0) return (GeomDet*)0;
-    else {
-      return distDetSet.begin()->second;
-    }
+  for (; shIt != simhits->end(); shIt++) { //loop on simit to find correspondent det (barrel)
+    const GeomDet* det = geometry_->idToDet((*shIt).detUnitId());
+    simhitsDetSet.insert(det);
   }
+
+  for (; shItEC != simhitsEC->end(); shItEC++) { //loop on simit to find correspondent det (endCaps)
+    const GeomDet* det = geometry_->idToDet((*shItEC).detUnitId());
+    simhitsDetSet.insert(det);
+  }
+
+  for (std::set<const GeomDet*>::iterator detIt=simhitsDetSet.begin(); detIt != simhitsDetSet.end(); detIt++) { //loop deset
+
+    const GeomDet* det = *detIt;
+    
+    int lay = tTopo->layer(det->geographicalId());
+    if(det->geographicalId().subdetId()==PixelSubdetector::PixelEndcap)
+      lay=lay+4; //endcap layer counting = 5,6,7
+        
+    std::pair<bool, Basic3DVector<float>> interPair = findIntersection(jetDir,(reco::Candidate::Point)jetVertex.position(), det);
+    if(interPair.first==false) continue;
+    Basic3DVector<float> inter = interPair.second;
+    auto localInter = det->specificSurface().toLocal((GlobalPoint)inter);
+
+    if(lay==llay) {
+      double dist2 = localInter.x()*localInter.x()+localInter.y()*localInter.y();
+      std::pair<double,const GeomDet*> distDet(dist2, det);
+      distDetSet.insert(distDet);
+    }
+
+  } //detset
+
+  if(distDetSet.size()!=0) edm::LogInfo("DeepCoreNtuplizer") << "Intersecting detector, layer ="<< llay << "  det=" << distDetSet.begin()->second->gdetIndex() << ", distance =" << distDetSet.begin()->first << std::endl;
+
+  if(distDetSet.size()==0) return (GeomDet*)0;
+  else 
+      return distDetSet.begin()->second;
+    
+}
 
 std::vector<GlobalVector> DeepCoreNtuplizer::splittedClusterDirections(const reco::Candidate& jet, const TrackerTopology* const tTopo, auto parEst, const reco::Vertex& jetVertex , int layer){
   std::vector<GlobalVector> clustDirs;
-
   edmNew::DetSetVector<SiPixelCluster>::const_iterator detIt_int = inputPixelClusters->begin();
-
 
   for (; detIt_int != inputPixelClusters->end(); detIt_int++) {
 
     const edmNew::DetSet<SiPixelCluster>& detset_int = *detIt_int;
     const GeomDet* det_int = geometry_->idToDet(detset_int.id());
     int lay = tTopo->layer(det_int->geographicalId());
-    if(det_int->geographicalId().subdetId()==PixelSubdetector::PixelEndcap) lay=lay+4; //endcap layer counting = 5,6,7
+    bool isEndCap =(det_int->geographicalId().subdetId()==PixelSubdetector::PixelEndcap);
+      
+    if(isEndCap)
+      lay=lay+4; //endcap layer counting = 5,6,7
     if(lay != layer) continue; //NB: saved bigclusetr on all the layers
-
+    
     for (auto cluster = detset_int.begin(); cluster != detset_int.end(); cluster++) {
       const SiPixelCluster& aCluster = *cluster;
       GlobalPoint cPos = det_int->surface().toGlobal(parEst->localParametersV(aCluster,(*geometry_->idToDetUnit(detIt_int->id())))[0].first);
       GlobalPoint ppv(jetVertex.position().x(), jetVertex.position().y(), jetVertex.position().z());
       GlobalVector clusterDir = cPos - ppv;
       GlobalVector jetDir(jet.px(), jet.py(), jet.pz());
-      if (Geom::deltaR(jetDir, clusterDir) < deltaR_) {
-            // check if the cluster has to be splitted
-            bool isEndCap =
-                (std::abs(cPos.z()) > 30.f);  // FIXME: check detID instead!
-            float jetZOverRho = jet.momentum().Z() / jet.momentum().Rho();
-            if (isEndCap)
-              jetZOverRho = jet.momentum().Rho() / jet.momentum().Z();
-            float expSizeY =
-                std::sqrt((1.3f*1.3f) + (1.9f*1.9f) * jetZOverRho*jetZOverRho);
-            if (expSizeY < 1.f) expSizeY = 1.f;
-            float expSizeX = 1.5f;
-            if (isEndCap) {
-              expSizeX = expSizeY;
-              expSizeY = 1.5f;
-            }  // in endcap col/rows are switched
-            float expCharge =
-                std::sqrt(1.08f + jetZOverRho * jetZOverRho) * centralMIPCharge_;
-            if (aCluster.charge() > expCharge * chargeFracMin_ && (aCluster.sizeX() > expSizeX + 1 ||  aCluster.sizeY() > expSizeY + 1)) {
-              edm::LogInfo("EventMonitor|seeding") << "found mergedcluster with deltaR" << Geom::deltaR(jetDir, clusterDir)<< ", on layer=" <<lay << std::endl;
-              clustDirs.push_back(clusterDir);
-            }
-          }
-        }
+      
+      if (Geom::deltaR(jetDir, clusterDir) > deltaR_)continue;
+      // check if the cluster has to be splitted
+      
+      float jetZOverRho = jet.momentum().Z() / jet.momentum().Rho();
+      if (isEndCap)
+	jetZOverRho = jet.momentum().Rho() / jet.momentum().Z();
+      float expSizeY =
+	std::sqrt((1.3f*1.3f) + (1.9f*1.9f) * jetZOverRho*jetZOverRho);
+      if (expSizeY < 1.f) expSizeY = 1.f;
+      float expSizeX = 1.5f;
+      if (isEndCap) {
+	expSizeX = expSizeY;
+	expSizeY = 1.5f;
+      }  // in endcap col/rows are switched
+      float expCharge =
+	std::sqrt(1.08f + jetZOverRho * jetZOverRho) * centralMIPCharge_;
+      if (aCluster.charge() > expCharge * chargeFracMin_ && (aCluster.sizeX() > expSizeX + 1 ||  aCluster.sizeY() > expSizeY + 1)) {
+	edm::LogInfo("DeepCoreNtuplizer") << "found mergedcluster with deltaR" << Geom::deltaR(jetDir, clusterDir)<< ", on layer=" <<lay << std::endl;
+	clustDirs.push_back(clusterDir);
       }
-      return clustDirs;
-
+    } // end of loop over clusters
+  } // end of loop over detId
+  return clustDirs;
 }
 
 
