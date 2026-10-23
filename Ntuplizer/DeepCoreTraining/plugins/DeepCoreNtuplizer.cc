@@ -36,8 +36,8 @@
 #include "FWCore/MessageLogger/interface/MessageLogger.h"
 
 
-
-#include "Geometry/CommonDetUnit/interface/GlobalTrackingGeometry.h"
+#include "Geometry/CommonTopologies/interface/GlobalTrackingGeometry.h"
+//#include "Geometry/CommonDetUnit/interface/GlobalTrackingGeometry.h" for 14_X
 #include "Geometry/Records/interface/GlobalTrackingGeometryRecord.h"
 #include "Geometry/Records/interface/TrackerTopologyRcd.h"
 
@@ -83,8 +83,8 @@
 // #include "SimDataFormats/Vertex/interface/SimVertex.h"
 
 
-#include "Geometry/CommonDetUnit/interface/PixelGeomDetUnit.h"
-
+//#include "Geometry/CommonDetUnit/interface/PixelGeomDetUnit.h" //for 14_2_X
+#include "Geometry/CommonTopologies/interface/PixelGeomDetUnit.h"
 
 
 #include "TTree.h"

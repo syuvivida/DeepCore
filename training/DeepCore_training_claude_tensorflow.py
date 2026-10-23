@@ -1,30 +1,40 @@
+##############################################################################################
+##  lxplus-gpu / uproot 5 port
+##  - Works with recent TensorFlow (2.16+, Keras 3) and also with older tf.keras (Keras 2).
+##  - Uses uproot 5 only (uproot3 is no longer needed / available in LCG views).
+##  - Environment on lxplus-gpu (EL9), e.g. an LCG CUDA view:
+##        ls /cvmfs/sft.cern.ch/lcg/views/ | grep cuda          # pick a recent LCG_xxx_cuda
+##        source /cvmfs/sft.cern.ch/lcg/views/LCG_xxx_cuda/x86_64-el9-gcc*-opt/setup.sh
+##    or a venv with:  pip install tensorflow[and-cuda] uproot awkward pandas matplotlib
+##  - Training samples on lxplus are typically on /eos: pass them with --trainPath/--valPath.
+##############################################################################################
 from __future__ import print_function
 import os
-os.environ['MKL_NUM_THREADS'] = '40'
-os.environ['GOTO_NUM_THREADS'] = '40'
-os.environ['OMP_NUM_THREADS'] = '40'
-os.environ['openmp'] = 'True'
+# Thread settings: the old 40-thread default oversubscribes shared lxplus nodes.
+# Override by exporting OMP_NUM_THREADS etc. before running.
+_nthreads = str(min(8, os.cpu_count() or 1))
+os.environ.setdefault('MKL_NUM_THREADS', _nthreads)
+os.environ.setdefault('GOTO_NUM_THREADS', _nthreads)
+os.environ.setdefault('OMP_NUM_THREADS', _nthreads)
+os.environ.setdefault('TF_CPP_MIN_LOG_LEVEL', '1')
 
 import tensorflow as tf
-from tensorflow.python.framework import ops
-from tensorflow.python.ops import clip_ops
-from tensorflow.python.ops import math_ops
-from tensorflow.python.ops import nn
 ##import pdb ## for debug stuff
 
-##
+# tf.keras is Keras 3 on TF>=2.16 and Keras 2 on older releases; everything below works with both.
 keras = tf.keras
-##import keras
-##from keras.backend import tensorflow_backend as K
-import tensorflow.keras.backend as K
-##
+K = keras.backend
+KERAS3 = keras.__version__.startswith('3') if hasattr(keras, '__version__') else False
 
-from keras.callbacks import Callback
-from keras.models import Model,load_model, Sequential
-from keras.layers import Input, LSTM, Dense, Flatten, Conv2D, MaxPooling2D, Dropout, Reshape, Conv2DTranspose, concatenate, Concatenate, ZeroPadding2D, UpSampling2D, UpSampling1D
-from keras.optimizers import *
-from keras.initializers import *
-from keras.callbacks import ModelCheckpoint
+Callback = keras.callbacks.Callback
+ModelCheckpoint = keras.callbacks.ModelCheckpoint
+Model = keras.models.Model
+load_model = keras.models.load_model
+Input = keras.layers.Input
+Conv2D = keras.layers.Conv2D
+Reshape = keras.layers.Reshape
+UpSampling2D = keras.layers.UpSampling2D
+concatenate = keras.layers.concatenate
 
 import pandas as pd
 import numpy as np
@@ -40,10 +50,19 @@ from  matplotlib import pyplot as plt
 import pylab
 import glob
 
-import uproot3
-import uproot
-gpus = tf.config.experimental.list_physical_devices('GPU')
-tf.config.experimental.set_memory_growth(gpus[0], True)
+import uproot  # uproot >= 4 (tested with uproot 5)
+
+# GPU setup: enable memory growth on every visible GPU; fall back to CPU instead of crashing
+gpus = tf.config.list_physical_devices('GPU')
+if gpus:
+    for _gpu in gpus:
+        try:
+            tf.config.experimental.set_memory_growth(_gpu, True)
+        except RuntimeError as _e:
+            print("WARNING: could not set memory growth:", _e)
+    print("Using GPU(s):", [g.name for g in gpus])
+else:
+    print("WARNING: no GPU visible to TensorFlow, running on CPU. On lxplus-gpu check `nvidia-smi` and that a CUDA-enabled TensorFlow is set up.")
 
 #################################################################################################################################################################################################################################################################################
 ##
@@ -65,7 +84,7 @@ tf.config.experimental.set_memory_growth(gpus[0], True)
 parser = argparse.ArgumentParser(description="DeepCore NN training and prediction-test script")
 parser.add_argument('--training',               dest='Training',                action='store_const',   const=True, default=False,           help='do the training of NN, if --input is empty used hardcoded sample')
 parser.add_argument('--predict',                dest='Predict',                 action='store_const',   const=True, default=False,           help='do the prediction of NN, if without --training hardcoded weights are used')
-parser.add_argument('--output',                 dest='Output',                  action='store_const',   const=True, default=False,           help='produce the output root file. NB: do not use on GPU (needed ROOT)')
+parser.add_argument('--output',                 dest='Output',                  action='store_const',   const=True, default=False,           help='produce the output root file (needs PyROOT, available in the LCG views on lxplus)')
 parser.add_argument('--input',                  dest='Input',                   action='store',                     default='',  type=str,   help='name of the local input file, if missing using large size sample (hardcoded)')
 parser.add_argument('--continueTraining',       dest='continueTraining',        action='store_const',   const=True, default=False,           help='continue the training from a previous step, start epoch hardcoded')
 parser.add_argument('--onData',                 dest='onData',                  action='store_const',   const=True, default=False,           help='running on data (without the target, to check performance)')
@@ -86,6 +105,18 @@ parser.add_argument('--weights',                  dest='Weights',    action='sto
 parser.add_argument('--epochsstart',                  dest='EpochsStart',    action='store',                     default=0,  type=int,   help=' Number of epochs to use for training')
 ## passing csv file which contains loss plots values from past trainings so the loss plots can include all epochs, not just the ones from this training
 parser.add_argument('--csv',                          dest='Csv',            action='store',                     default='',  type=str,   help='name of the csv file')
+## lxplus port: sample locations are no longer hardcoded to the Fermilab disk
+parser.add_argument('--trainPath',  dest='TrainPath', action='store', type=str,
+                    default='/storage/local/data1/gpuscratch/hichemb/DeepCore_git/DeepCore_Training/TrainingSamples/training/DeepCoreTrainingSample_*.root',
+                    help='glob pattern of the training ROOT files (central-input workflow), e.g. "/eos/user/x/you/training/DeepCoreTrainingSample_*.root"')
+parser.add_argument('--valPath',    dest='ValPath',   action='store', type=str,
+                    default='/storage/local/data1/gpuscratch/hichemb/DeepCore_git/DeepCore_Training/TrainingSamples/validation/DeepCoreTrainingSample_*.root',
+                    help='glob pattern of the validation ROOT files (central-input workflow)')
+parser.add_argument('--cycles',     dest='Cycles',    action='store', type=str, default='all', choices=['all', 'latest'],
+                    help='which TTree cycles to read in each file. "all" reproduces the old behaviour (every cycle, previously hardcoded 1-8); '
+                         '"latest" reads only the highest cycle (normal ROOT convention, use it if lower cycles are just AutoSave backups)')
+parser.add_argument('--predWeights', dest='PredWeights', action='store', type=str, default='Training_1019_9k/Deepcore_train_weights1019.h5',
+                    help='weights used by --predict when --training is not given')
 
 args = parser.parse_args()
 
@@ -177,7 +208,7 @@ if EXTRA_VALIDATION :
 # 3) an efficiency and fake-rate estimation based on the chi2
 class validationCall(Callback) : 
     def on_epoch_end(self,epoch, logs={}) :
-        [call_par, call_prob] = self.model.predict([input_,input_jeta,input_jpt])
+        [call_par, call_prob] = self.model.predict([input_,input_jeta.reshape(-1,1),input_jpt.reshape(-1,1)], batch_size=batch_size, verbose=0)
         call_prob = call_prob[:,:,:,:,:-1]
 
         for par in range(parNum) :
@@ -252,8 +283,8 @@ class validationCall(Callback) :
            fake_rate_8[epoch] = N_fake_8/N_tot_fake
 
 #callback to have additional trained model every 10 epochs
-class wHistory(keras.callbacks.Callback):
-   def on_epoch_end(self, epoch, logs={}):
+class wHistory(Callback):
+   def on_epoch_end(self, epoch, logs=None):
        if epoch % 10 == 0 :
                self.model.save("trained"+str(epoch+0)+".h5")
 wH = wHistory()
@@ -261,12 +292,13 @@ wH = wHistory()
 #callback to have the weight saved every batch
 class WeightsSaver(Callback):
     def __init__(self, N):
+        super(WeightsSaver, self).__init__()
         self.N = N
         self.batch = 0
 
-    def on_batch_end(self, batch, logs={}):
+    def on_batch_end(self, batch, logs=None):
         if self.batch % self.N == 0:
-            name = 'weights%08d.h5' % self.batch
+            name = 'weights%08d.weights.h5' % self.batch  # Keras 3 requires the .weights.h5 suffix
             self.model.save_weights(name)
         self.batch += 1
 
@@ -276,15 +308,16 @@ class NBatchLogger(Callback):
     A Logger that log average performance per `display` steps.
     """
     def __init__(self, display):
+        super(NBatchLogger, self).__init__()
         self.step = 0
         self.display = display
         self.metric_cache = {}
 
-    def on_batch_end(self, batch, logs={}):
+    def on_batch_end(self, batch, logs=None):
+        logs = logs or {}
         self.step += 1
-        for k in self.params['metrics']:
-            if k in logs:
-                self.metric_cache[k] = self.metric_cache.get(k, 0) + logs[k]
+        for k, v in logs.items():  # self.params['metrics'] no longer exists in TF2/Keras 3
+            self.metric_cache[k] = self.metric_cache.get(k, 0) + float(v)
         if self.step % self.display == 0:
             metrics_log = ''
             for (k, v) in self.metric_cache.items():
@@ -294,115 +327,123 @@ class NBatchLogger(Callback):
                 else:
                     metrics_log += ' - %s: %.4e' % (k, val)
             print('step: {}/{} ... {}'.format(self.step,
-                                          self.params['steps'],
+                                          self.params.get('steps'),
                                           metrics_log))
             self.metric_cache.clear()
 
 
 #used in the losses
-def _to_tensor(x, dtype):
-    return ops.convert_to_tensor(x, dtype=dtype)
-
-#used in the losses
 def epsilon():
     return _Epsilon
 
-#loss function for probability, used in the first part of the training
-def loss_ROI_crossentropy(target, output):
-    epsilon_ = _to_tensor(keras.backend.epsilon(), output.dtype.base_dtype)
-    output = clip_ops.clip_by_value(output, epsilon_, 1 - epsilon_)
+# Losses: rewritten with public tf.* ops (tensorflow.python.ops.* internals are not usable with Keras 3).
+# The maths is unchanged.
+
+def _prob_logits(target, output):
+    target = tf.cast(target, output.dtype)
+    eps = tf.constant(keras.backend.epsilon(), dtype=output.dtype)
+    output = tf.clip_by_value(output, eps, 1 - eps)
     wei = target[:,:,:,:,-1:]
     target = target[:,:,:,:,:-1]
     output = output[:,:,:,:,:-1]
-    output = math_ops.log(output / (1 - output))
-    retval = nn.weighted_cross_entropy_with_logits(labels=target, logits=output, pos_weight=10)#900=works #2900=200x200, 125=30x30
+    logits = tf.math.log(output / (1 - output))
+    retval = tf.nn.weighted_cross_entropy_with_logits(labels=target, logits=logits, pos_weight=10)#900=works #2900=200x200, 125=30x30
+    return retval, wei
+
+#loss function for probability, used in the first part of the training
+def loss_ROI_crossentropy(target, output):
+    retval, wei = _prob_logits(target, output)
     retval = retval*wei
     return tf.reduce_sum(retval, axis=None)/(tf.reduce_sum(wei,axis=None)+0.00001) #0.00001 needed to avoid numeric issue
 
 #loss function for probability, used in the last part of the training (difference: non-zero weight to pixel far from crossing point)
 def loss_ROIsoft_crossentropy(target, output):
-    epsilon_ = _to_tensor(keras.backend.epsilon(), output.dtype.base_dtype)
-    output = clip_ops.clip_by_value(output, epsilon_, 1 - epsilon_)
-    wei = target[:,:,:,:,-1:]
-    target = target[:,:,:,:,:-1]
-    output = output[:,:,:,:,:-1]
-    output = math_ops.log(output / (1 - output))
-    retval = nn.weighted_cross_entropy_with_logits(labels=target, logits=output, pos_weight=10)#900=works #2900=200x200, 125=30x30
+    retval, wei = _prob_logits(target, output)
     retval = retval*(wei+0.01) # here the difference
-    ## ROIsoft: does not work since denominator goes to 0 sometimes 
-    ## return tf.reduce_sum(retval, axis=None)/(tf.reduce_sum(wei,axis=None))
-    ## ROIsoft fix 1
-    ## return tf.reduce_sum(retval, axis=None)/(tf.reduce_sum(wei,axis=None)+0.00001)
     ## ROIsoft fix 2
     return tf.reduce_sum(retval,axis=None)/(tf.reduce_sum((wei+0.01),axis=None))
 
 #loss for track parameter
 def loss_mse_select_clipped(y_true, y_pred) :
+    y_true = tf.cast(y_true, y_pred.dtype)
     wei = y_true[:,:,:,:,-1:]
     pred = y_pred[:,:,:,:,:-1]
     true =  y_true[:,:,:,:,:-1]
-    inv_sd = tf.constant([1/0.404, 1/0.478, 1/1.9, 1/2, 1/150], dtype=tf.float32) # inverse standard deviation of each TP
-    mean = tf.constant([0, 0, 0, 0, 95], dtype=tf.float32) # mean of each TP
+    inv_sd = tf.constant([1/0.404, 1/0.478, 1/1.9, 1/2, 1/150], dtype=y_pred.dtype) # inverse standard deviation of each TP
+    mean = tf.constant([0, 0, 0, 0, 95], dtype=y_pred.dtype) # mean of each TP
    # Standardization of target and predicted TPs
     pred = tf.subtract(pred, mean)* inv_sd
     true = tf.subtract(true,mean)*inv_sd
-    out =K.square(tf.clip_by_value(pred-true,-5,5))*wei  # Clipping at +/-5 sigmas
+    out = tf.square(tf.clip_by_value(pred-true,-5,5))*wei  # Clipping at +/-5 sigmas
     return tf.reduce_sum(out, axis=None)/(tf.reduce_sum(wei,axis=None)*5+0.00001) #5=parNum
 
-# Generator used to load all the input file in the LOCAL_INPUT=False workflow
-## Changed uproot to uproot3 in order to use central sample
 
-#OUTDATED! Doesn't run on all cycles
-def Generator(files) :
-     while 1:
-        print("entering while loop")
-        for f in files :
-            import uproot3
-            tfile = uproot3.open(f)
-            tree = tfile[inputModuleName][inputTreeName]
-            input_ = tree.array("cluster_measured")
-            input_jeta = tree.array("jet_eta")
-            input_jpt = tree.array("jet_pt")
-            target_ = tree.array("trackPar")
-            target_prob = tree.array("trackProb")
+#-------------------------- uproot 5 I/O helpers --------------------------#
 
-            wei = target_[:,:,:,:,-1:]
-            nev = len(target_prob)
-            target_prob = np.reshape(target_prob, (nev,jetDim,jetDim,overlapNum,1))
-            target_prob = concatenatenp([target_prob,wei],axis=4)
-            print(len(input_jeta),batch_size, len(input_jeta)/batch_size)
-            for k in range(int(len(input_jeta)/batch_size)) :
-                yield [input_[batch_size*(k):batch_size*(k+1)],input_jeta[batch_size*(k):batch_size*(k+1)],input_jpt[batch_size*(k):batch_size*(k+1)]], [target_[batch_size*(k):batch_size*(k+1)],target_prob[batch_size*(k):batch_size*(k+1)]]
+def tree_cycles(filename):
+    """Return the sorted list of cycles of inputModuleName/inputTreeName present in a file."""
+    with uproot.open(filename) as f:
+        d = f[inputModuleName]
+        cyc = []
+        for k in d.keys(cycle=True, recursive=False):
+            name, _, c = k.partition(';')
+            if name == inputTreeName and c:
+                cyc.append(int(c))
+    return sorted(set(cyc))
 
-#runs on cycles 1-8, automatic batching, uproot4
-def Generator2(filepath,batch_size=0,count=False):
-    if count:
-        branches = ["jet_eta"]
-        batch_size = 1000
-    else:
-        branches = ["cluster_measured","jet_eta","jet_pt","trackPar","trackProb"]
+def tree_sources(pattern, cycles_mode='all'):
+    """Expand a glob pattern into a list of (file, 'dir/tree;cycle') pairs.
+    Replaces the old hardcoded range(1,9), which crashed on files with a different number of cycles."""
+    files = sorted(glob.glob(os.path.expandvars(os.path.expanduser(pattern))))
+    sources = []
+    for fn in files:
+        cyc = tree_cycles(fn)
+        if not cyc:
+            print("WARNING: no {}/{} in {}, skipped".format(inputModuleName, inputTreeName, fn))
+            continue
+        if cycles_mode == 'latest':
+            cyc = cyc[-1:]
+        for c in cyc:
+            sources.append((fn, "{}/{};{}".format(inputModuleName, inputTreeName, c)))
+    return sources
 
+def count_entries(sources):
+    total = 0
+    for fn, obj in sources:
+        with uproot.open(fn) as f:
+            total += f[obj].num_entries
+    return total
+
+def read_tree(filename, branches, cycles_mode='latest'):
+    """Read full branches of one file into numpy (replaces uproot3 tree.array)."""
+    out = {b: [] for b in branches}
+    for fn, obj in tree_sources(filename, cycles_mode):
+        with uproot.open(fn) as f:
+            arrs = f[obj].arrays(branches, library="np")
+        for b in branches:
+            out[b].append(arrs[b])
+    if not out[branches[0]]:
+        raise RuntimeError("no {}/{} found in {}".format(inputModuleName, inputTreeName, filename))
+    return {b: np.concatenate(v, axis=0) for b, v in out.items()}
+
+def build_target_prob(trackProb, trackPar):
+    nev = len(trackProb)
+    target_prob = np.reshape(trackProb, (nev,jetDim,jetDim,overlapNum,1))
+    return concatenatenp([target_prob, trackPar[:,:,:,:,-1:]], axis=4)
+
+#runs on all cycles found in the files (or only the latest, see --cycles), automatic batching, uproot 5
+def Generator2(sources, batch_size=64):
+    branches = ["cluster_measured","jet_eta","jet_pt","trackPar","trackProb"]
     while 1:
-        for cycle in range(1,9):
-           # print(cycle)
-            for chunk in uproot.iterate("{}:{}/{};{}".format(filepath,inputModuleName,inputTreeName,str(cycle)),branches,step_size=batch_size,library="np"):
-                if count:
-                    yield chunk['jet_eta'].shape[0]
-                else:
-                    nev = len(chunk["trackProb"])
-
-                    target_prob = np.reshape(chunk["trackProb"], (nev,jetDim,jetDim,overlapNum,1))
-
-                    target_prob = concatenatenp([target_prob,chunk["trackPar"][:,:,:,:,-1:]],axis=4)
-                    #zero_elements = target_prob[:,:,:,:,-1]==0 #build an array that's True for every 0-valued entry
-                    #target_prob[:,:,:,:,-1]=1.0/target_prob[:,:,:,:,-1] #invert everything, which will send all 0 pt entries to inf
-                    #target_prob[:,:,:,:,-1][zero_elements] = 0 #reassign the inf values back to 0
-                    
-                    ## debug
-                    ##pdb.set_trace()
-                    yield [chunk['cluster_measured'][:,:,:,0:layNum],chunk["jet_eta"],chunk["jet_pt"]],[chunk["trackPar"],target_prob]
-        if count:
-            break
+        for fn, obj in sources:
+            for chunk in uproot.iterate({fn: obj}, branches, step_size=batch_size, library="np"):
+                target_prob = build_target_prob(chunk["trackProb"], chunk["trackPar"])
+                # Keras 3 needs tuples (not lists) from generators
+                yield ((chunk['cluster_measured'][:,:,:,0:layNum].astype(np.float32),
+                        chunk["jet_eta"].astype(np.float32).reshape(-1,1),
+                        chunk["jet_pt"].astype(np.float32).reshape(-1,1)),
+                       (chunk["trackPar"].astype(np.float32),
+                        target_prob.astype(np.float32)))
 
 
 
@@ -479,6 +520,7 @@ def Deb1ev_sampleBuilding(input_,input_jeta,input_jpt,target_,target_prob) :
     input_jpt= input_jpt[1:2]
     target_= target_[1:2]
     target_prob= target_prob[1:2]
+    return input_,input_jeta,input_jpt,target_,target_prob  # previously the slicing was silently lost
 
 # function called with  AVERAGE_VALUES_TEST=True
 def averageADC(input_) :  
@@ -509,59 +551,17 @@ def averageADC(input_) :
     pylab.savefig("ADC_count.pdf")  
 
 # function called with  CHECK_SAMPLE=True
-def check_sample(files_input,files_input_validation) :
+def check_sample(sources_input, sources_input_validation) :
     #------ check nan/inf in the sample -------------#
     print("checksample")
-    print("number of  file=", len(files_input))
-    for f in files_input :
-            tfile = uproot.open(f)
-            tree = tfile[inputModuleName][inputTreeName]
-            input_ = tree.array("cluster_measured")
-            input_jeta = tree.array("jet_eta")
-            input_jpt = tree.array("jet_pt")
-            target_ = tree.array("trackPar")
-            target_prob = tree.array("trackProb")
-
-            # weicheck = target_[:,:,:,:,-1:]
-            # print("file target ",f," wei sum=", K.eval(tf.reduce_sum(weicheck,axis=None)))
-            print("file input ",f,", NAN=",np.isnan(np.sum(input_)))
-            print("file input ",f,", inf=",np.isinf(np.sum(input_)))
-            print("file input jeta ",f,", NAN=",np.isnan(np.sum(input_jeta)))
-            print("file input jeta ",f,", inf=",np.isinf(np.sum(input_jeta)))
-            print("file input jpt ",f,", NAN=",np.isnan(np.sum(input_jpt)))
-            print("file input jpt ",f,", inf=",np.isinf(np.sum(input_jpt)))
-            print("file target ",f,", NAN=",np.isnan(np.sum(target_)))
-            print("file target ",f,", inf=",np.isinf(np.sum(target_)))
-            print("file target prob ",f,", NAN=",np.isnan(np.sum(target_prob)))
-            print("file target prob ",f,", inf=",np.isinf(np.sum(target_prob)))
-    for f in files_input_validation :
-            tfile = uproot.open(f)
-            tree = tfile[inputModuleName][inputTreeName]
-            input_ = tree.array("cluster_measured")
-            input_jeta = tree.array("jet_eta")
-            input_jpt = tree.array("jet_pt")
-            target_ = tree.array("trackPar")
-            target_prob = tree.array("trackProb")
-
-            # weicheck = target_[:,:,:,:,-1:]
-            # print("file target ",f," wei sum=", K.eval(tf.reduce_sum(weicheck,axis=None)))
-            print("file input ",f,", NAN=",np.isnan(np.sum(input_)))
-            print("file input ",f,", inf=",np.isinf(np.sum(input_)))
-            print("file input jeta ",f,", NAN=",np.isnan(np.sum(input_jeta)))
-            print("file input jeta ",f,", inf=",np.isinf(np.sum(input_jeta)))
-            print("file input jpt ",f,", NAN=",np.isnan(np.sum(input_jpt)))
-            print("file input jpt ",f,", inf=",np.isinf(np.sum(input_jpt)))
-            print("file target ",f,", NAN=",np.isnan(np.sum(target_)))
-            print("file target ",f,", inf=",np.isinf(np.sum(target_)))
-            print("file target prob ",f,", NAN=",np.isnan(np.sum(target_prob)))
-            print("file target prob ",f,", inf=",np.isinf(np.sum(target_prob)))
-            
-
-
-
-
-
-
+    print("number of trees=", len(sources_input)+len(sources_input_validation))
+    branches = ["cluster_measured","jet_eta","jet_pt","trackPar","trackProb"]
+    for fn, obj in list(sources_input)+list(sources_input_validation) :
+        with uproot.open(fn) as f:
+            arrs = f[obj].arrays(branches, library="np")
+        for b in branches:
+            s = np.sum(arrs[b])
+            print("file ", fn, obj, b, ", NAN=", np.isnan(s), ", inf=", np.isinf(s))
 
 
 #-----------------------------------------------------------------------------#
@@ -572,55 +572,30 @@ if(LOCAL_INPUT) : #loaded the local input
     print("WARNING: using local data (also for training!)")
     print("loading data: start")
 
-    tfile = uproot3.open(input_name)
-    tree = tfile[inputModuleName][inputTreeName]
-    tree = tfile[inputModuleName][inputTreeName]
-    ##print(tree)
-    input_ = tree.array("cluster_measured")
-    input_jeta = tree.array("jet_eta")
-    input_jpt = tree.array("jet_pt")
+    _branches = ["cluster_measured","jet_eta","jet_pt"]
     if(not ON_DATA):
-        target_ = tree.array("trackPar")
-        target_prob = tree.array("trackProb")
-        wei = target_[:,:,:,:,-1:]
-        nev = len(target_prob)
-        target_prob = np.reshape(target_prob, (nev,jetDim,jetDim,overlapNum,1))
-        target_prob = concatenatenp([target_prob,wei],axis=4)
+        _branches += ["trackPar","trackProb"]
+    _arrs = read_tree(input_name, _branches, args.Cycles)
+    input_ = _arrs["cluster_measured"][:,:,:,0:layNum]
+    input_jeta = _arrs["jet_eta"]
+    input_jpt = _arrs["jet_pt"]
+    if(not ON_DATA):
+        target_ = _arrs["trackPar"]
+        target_prob = build_target_prob(_arrs["trackProb"], target_)
+    del _arrs
 
-    print("loading data: completed")
+    print("loading data: completed, events =", len(input_jeta))
 
 else :  #loaded the central input
     #---------------- central input  ----------------#
-
-    #barrel full stat
-    ## files=glob.glob('/gpfs/ddn/srm/cms/store/user/vbertacc/NNClustSeedInputSimHit/QCD_Pt_1800to2400_TuneCUETP8M1_13TeV_pythia8//NNClustSeedInputSimHit_1LayClustPt_cutPt/190216_214452/0000/ntuple*.root') + glob.glob('/gpfs/ddn/srm/cm
-    ## files=glob.glob('/storage/local/data1/gpuscratch/hichemb/XTraining0211/DeepCoreTrainingSample.root')
-    #files=glob.glob('/storage/local/data1/gpuscratch/hichemb/Training0217/TrainingSamples/training/DeepCoreTrainingSample*.root')
-    #files_validation=glob.glob('/storage/local/data1/gpuscratch/hichemb/Training0217/TrainingSamples/validation/DeepCoreTrainingSample*.root')
-    #Generator2 approach
-    trainingpath = "/storage/local/data1/gpuscratch/hichemb/DeepCore_git/DeepCore_Training/TrainingSamples/training/DeepCoreTrainingSample_*.root"
-    validationpath = "/storage/local/data1/gpuscratch/hichemb/DeepCore_git/DeepCore_Training/TrainingSamples/validation/DeepCoreTrainingSample_*.root"
-    
-    #GPU3 training/validation files
-    #trainingpath = "/storage/local/data1/gpuscratch/njh/Training0217/training/DeepCoreTrainingSample_*.root:DeepCoreNtuplizerTest/DeepCoreNtuplizerTree;"
-    #validationpath = "/storage/local/data1/gpuscratch/njh/Training0217/validation/DeepCoreTrainingSample_*.root:DeepCoreNtuplizerTest/DeepCoreNtuplizerTree;"
-
-    #files_validation=glob.glob('/gpfs/ddn/srm/cms/store/user/vbertacc/NNClustSeedInputSimHit/QCD_Pt_1800to2400_TuneCUETP8M1_13TeV_pythia8//NNClustSeedInputSimHit_1LayClustPt_cutPt/190216_214452/0004/ntuple_simHit_1LayClustPt_cutPt_46*.root')+glob.glob('/gpfs/ddn/srm/cms/store/user/vbertacc/NNClustSeedInputSimHit/QCD_Pt_1800to2400_TuneCUETP8M1_13TeV_pythia8//NNClustSeedInputSimHit_1LayClustPt_cutPt/190216_214452/0004/ntuple_simHit_1LayClustPt_cutPt_47*.root')+glob.glob('/gpfs/ddn/srm/cms/store/user/vbertacc/NNClustSeedInputSimHit/QCD_Pt_1800to2400_TuneCUETP8M1_13TeV_pythia8//NNClustSeedInputSimHit_1LayClustPt_cutPt/190216_214452/0004/ntuple_simHit_1LayClustPt_cutPt_48*.root')+glob.glob('/gpfs/ddn/srm/cms/store/user/vbertacc/NNClustSeedInputSimHit/QCD_Pt_1800to2400_TuneCUETP8M1_13TeV_pythia8//NNClustSeedInputSimHit_1LayClustPt_cutPt/190216_214452/0004/ntuple_simHit_1LayClustPt_cutPt_49*.root')
-
-    #barrel small stat
-    # files=glob.glob('/gpfs/ddn/srm/cms/store/user/vbertacc/NNClustSeedInputSimHit/QCD_Pt_1800to2400_TuneCUETP8M1_13TeV_pythia8/NNClustSeedInputSimHit_1LayClustPt_cutPt/190216_214452/0000/ntuple_simHit_1LayClustPt_cutPt_9*.root')
-    # files_validation=glob.glob('/gpfs/ddn/srm/cms/store/user/vbertacc/NNClustSeedInputSimHit/QCD_Pt_1800to2400_TuneCUETP8M1_13TeV_pythia8/NNClustSeedInputSimHit_1LayClustPt_cutPt/190216_214452/0000/ntuple_simHit_1LayClustPt_cutPt_9*.root')
-
-    #Endcap (pt cut 500GeV, 30x30) full stat
-    # files=glob.glob('/gpfs/ddn/srm/cms/store/user/vbertacc/NNClustSeedInputSimHit/UBGGun_E-1000to7000_Eta-1p2to2p1_13TeV_pythia8/NNClustSeedInputSimHit_EC_centralEgun_pt500cut/200603_153129/0000/nuple_ntuple_EC_centralEgun_pt500cut_*.root')+ glob.glob('/gpfs/ddn/srm/cms/store/user/vbertacc/NNClustSeedInputSimHit/UBGGun_E-1000to7000_Eta-1p2to2p1_13TeV_pythia8/NNClustSeedInputSimHit_EC_centralEgun_pt500cut/200603_153129/0002/nuple_ntuple_EC_centralEgun_pt500cut_*.root')+ glob.glob('/gpfs/ddn/srm/cms/store/user/vbertacc/NNClustSeedInputSimHit/UBGGun_E-1000to7000_Eta-1p2to2p1_13TeV_pythia8/NNClustSeedInputSimHit_EC_centralEgun_pt500cut/200603_153129/0003/nuple_ntuple_EC_centralEgun_pt500cut_*.root')+ glob.glob('/gpfs/ddn/srm/cms/store/user/vbertacc/NNClustSeedInputSimHit/UBGGun_E-1000to7000_Eta-1p2to2p1_13TeV_pythia8/NNClustSeedInputSimHit_EC_centralEgun_pt500cut/200603_153129/0004/nuple_ntuple_EC_centralEgun_pt500cut_*.root')
-    # files_validation = glob.glob('/gpfs/ddn/srm/cms/store/user/vbertacc/NNClustSeedInputSimHit/UBGGun_E-1000to7000_Eta-1p2to2p1_13TeV_pythia8/NNClustSeedInputSimHit_EC_centralEgun_pt500cut/200603_153129/0001/nuple_ntuple_EC_centralEgun_pt500cut_*.root')
-
-    # Endcap small stat
-    # files=glob.glob('/gpfs/ddn/srm/cms/store/user/vbertacc/NNClustSeedInputSimHit/UBGGun_E-1000to7000_Eta-1p2to2p1_13TeV_pythia8/NNClustSeedInputSimHit_EC_centralEgun_pt500cut/200603_153129/0000/ntuple_EC_centralEgun_pt500cut_*.root')
-    # files_validation = glob.glob('/gpfs/ddn/srm/cms/store/user/vbertacc/NNClustSeedInputSimHit/UBGGun_E-1000to7000_Eta-1p2to2p1_13TeV_pythia8/NNClustSeedInputSimHit_EC_centralEgun_pt500cut/200603_153129/0001/ntuple_EC_centralEgun_pt500cut_1*.root')
-
-
-
+    # paths now come from --trainPath / --valPath (defaults = old Fermilab location)
+    trainingpath = args.TrainPath
+    validationpath = args.ValPath
+    train_sources = tree_sources(trainingpath, args.Cycles)
+    val_sources = tree_sources(validationpath, args.Cycles)
+    if (TRAIN or CHECK_SAMPLE) and (not train_sources or not val_sources):
+        sys.exit("ERROR: no input trees found.\n  --trainPath {}\n  --valPath   {}\n"
+                 "On lxplus pass the location of your samples (e.g. on /eos) with --trainPath/--valPath.".format(trainingpath, validationpath))
 
 
 #-----------------------------------------------------------------------------------------#
@@ -635,9 +610,9 @@ if LOCAL_INPUT :
         average_1_eval(input_, target_prob)
         averageADC(input_)
     if DEB1EV :
-        Deb1ev_sampleBuilding(input_,input_jeta,input_jpt,target_,target_prob)
+        input_,input_jeta,input_jpt,target_,target_prob = Deb1ev_sampleBuilding(input_,input_jeta,input_jpt,target_,target_prob)
 elif CHECK_SAMPLE:
-    check_sample(files_,files_validation)
+    check_sample(train_sources, val_sources)
 
 
 
@@ -657,8 +632,6 @@ elif CHECK_SAMPLE:
 # Epochs 246-252 ---> 22M ev,  LR =0.00000001,loss_ROIsoft_crossentropy, epochs of 1M ev--> steps/20, batch_size=64 (experimental, never used in CMSSW)
 
 if TRAIN or PREDICT :
-
-    from keras.layers import AlphaDropout
 
     NNinputs_jeta = Input(shape=(1,))
     NNinputs_jpt = Input(shape=(1,))
@@ -714,7 +687,7 @@ if TRAIN or PREDICT :
 #######################################################################################################################
 
  # DeepCore 2.2 Architecture
-    conv30_9 = Conv2D(50,7, data_format="channels_last", input_shape=(jetDim,jetDim,layNum+2), activation='relu',padding="same")(ComplInput)
+    conv30_9 = Conv2D(50,7, data_format="channels_last", activation='relu',padding="same")(ComplInput)
     conv30_7 = Conv2D(40,5, data_format="channels_last", activation='relu',padding="same")(conv30_9)
     conv30_5 = Conv2D(40,5, data_format="channels_last", activation='relu',padding="same")(conv30_7)#
     conv20_5 = Conv2D(30,5, data_format="channels_last", activation='relu',padding="same")(conv30_5)
@@ -764,31 +737,24 @@ if TRAIN or PREDICT :
 tot_events = 0
 tot_events_validation = 0
 if(LOCAL_INPUT) :
-    tfile = uproot3.open(input_name)
-    tree = tfile[inputModuleName][inputTreeName]
-    input_jeta2 = tree.array("jet_eta")
-    tot_events = len(input_jeta2)
+    tot_events = len(input_jeta)
     tot_events_validation=tot_events*valSplit
     tot_events=tot_events*(1-valSplit)
 else :
-    print("number of  file=", len(glob.glob(trainingpath)))
-    print("number of file validation=", len(glob.glob(validationpath)))
-    for batch in Generator2(trainingpath,count=True):
-        #pdb.set_trace()
-        tot_events += batch
-
-    for batch in Generator2(validationpath,count=True):
-        tot_events_validation += batch
+    print("number of trees (file x cycle) training  =", len(train_sources))
+    print("number of trees (file x cycle) validation=", len(val_sources))
+    tot_events = count_entries(train_sources)
+    tot_events_validation = count_entries(val_sources)
 
 
-jetNum = tot_events
-jetNum_validation = tot_events_validation
+jetNum = int(tot_events)
+jetNum_validation = int(tot_events_validation)
 print("total number of events =", jetNum)
 print("total number of events validation=", jetNum_validation)
 
-## commented out since cant find val loss
-checkpointer = ModelCheckpoint(filepath="weights.{epoch:02d}-{val_loss:.4f}.hdf5",verbose=1, save_weights_only=False)
-#checkpointer= ModelCheckpoint(filepath="weights.{epoch:02d}.hdf5",verbose=1, save_weights_only=False)
+# full model checkpoint every epoch (.h5 legacy format: Keras 3 only accepts .keras or .h5 here, not .hdf5;
+# load_weights() still reads the old .hdf5 files)
+checkpointer = ModelCheckpoint(filepath="weights.{epoch:02d}-{val_loss:.4f}.h5",verbose=1, save_weights_only=False)
 
 if TRAIN :
     stepNum = jetNum/batch_size
@@ -804,34 +770,39 @@ if TRAIN :
         
         #EndCap training, last weights (not satisfactory, consider to restart)
         # model.load_weights('../data/DeepCore_ENDCAP_train_ep150.h5')
-        
-       # model.load_weights('DeepCore_train_ev{ev}_ep{ep}.h5'.format(ev=jetNum,ep=start_epoch))
     else : #restart training
         start_epoch = 0
     
     print("training: start")
     
     if LOCAL_INPUT :
+        _x = [input_, input_jeta.reshape(-1,1), input_jpt.reshape(-1,1)]
+        _y = [target_, target_prob]
         if DEB1EV :
-            history  = model.fit([input_,input_jeta,input_jpt], [target_,target_prob],  batch_size=batch_size, epochs=epochs+start_epoch, verbose = 2,initial_epoch=start_epoch)
+            history  = model.fit(_x, _y,  batch_size=batch_size, epochs=epochs+start_epoch, verbose = 2,initial_epoch=start_epoch)
         elif EXTRA_VALIDATION :
-            pdf_par = mpl.backends.backend_pdf.PdfPages("DeepCore_parameter_file_ep{Epoch}.pdf".format(Epoch=epochs+start_epoch))
-            history  = model.fit([input_,input_jeta,input_jpt], [target_,target_prob],  batch_size=batch_size, epochs=epochs+start_epoch, verbose = 2, validation_split=valSplit,  initial_epoch=start_epoch, callbacks=[checkpointer, NBatchLogger(1),validationCall() ])
+            pdf_par = backpdf.PdfPages("DeepCore_parameter_file_ep{Epoch}.pdf".format(Epoch=epochs+start_epoch))
+            history  = model.fit(_x, _y,  batch_size=batch_size, epochs=epochs+start_epoch, verbose = 2, validation_split=valSplit,  initial_epoch=start_epoch, callbacks=[checkpointer, NBatchLogger(1),validationCall() ])
             pdf_par.close()
         else :
-            history  = model.fit([input_,input_jeta,input_jpt], [target_,target_prob],  batch_size=batch_size, epochs=epochs+start_epoch, verbose = 2, validation_split=valSplit,  initial_epoch=start_epoch, callbacks=[checkpointer])            
+            history  = model.fit(_x, _y,  batch_size=batch_size, epochs=epochs+start_epoch, verbose = 2, validation_split=valSplit,  initial_epoch=start_epoch, callbacks=[checkpointer])            
     else : #full standard training
-        ## chaning steps_per_epoch=stepNum/20 to steps_per_epoch=stepNum
-        #history = model.fit_generator(generator=Generator(files),steps_per_epoch=stepNum, epochs=epochs+start_epoch, verbose = 2, max_queue_size=1, validation_data=Generator(files_validation),  validation_steps=jetNum_validation/batch_
-        
         ## Adjust step size between trainings: if step size = 1/20 then inverse_step_size = 20
         inverse_step_size = 1
         val_inverse_step_size = 1
 
-        history = model.fit(Generator2(trainingpath,batch_size),steps_per_epoch=int(stepNum/inverse_step_size),epochs=start_epoch+args.Epochs,verbose=2,max_queue_size=1,validation_data=Generator2(validationpath,batch_size),validation_steps=int(jetNum_validation/(val_inverse_step_size*batch_size)), initial_epoch=start_epoch, callbacks=[checkpointer])
+        # NB: max_queue_size/workers were removed from fit() in Keras 3.
+        # epochs: previously start_epoch+args.Epochs, which trained 0 epochs when --epochs was omitted
+        history = model.fit(Generator2(train_sources,batch_size),
+                            steps_per_epoch=max(1,int(stepNum/inverse_step_size)),
+                            epochs=start_epoch+epochs, verbose=2,
+                            validation_data=Generator2(val_sources,batch_size),
+                            validation_steps=max(1,int(jetNum_validation/(val_inverse_step_size*batch_size))),
+                            initial_epoch=start_epoch, callbacks=[checkpointer])
         print("done running; now save")
         
-    model.save_weights('DeepCore_train_ev{ev}_ep{ep}.h5'.format(ev=jetNum, ep=epochs+start_epoch))
+    # Keras 3 requires the ".weights.h5" suffix for save_weights
+    model.save_weights('DeepCore_train_ev{ev}_ep{ep}.weights.h5'.format(ev=jetNum, ep=epochs+start_epoch))
     model.save('DeepCore_model_ev{ev}_ep{ep}.h5'.format(ev=jetNum, ep=epochs+start_epoch))
     
     print("training: completed")
@@ -839,19 +810,26 @@ if TRAIN :
 
     #plot of the losses ---------------
     ## added start_epoch so loss file shows overall number of epochs
-    pdf_loss = mpl.backends.backend_pdf.PdfPages("loss_file_ep{Epoch}_ev{ev}.pdf".format(Epoch=epochs+start_epoch,ev=jetNum))
+    pdf_loss = backpdf.PdfPages("loss_file_ep{Epoch}_ev{ev}.pdf".format(Epoch=epochs+start_epoch,ev=jetNum))
 
     if(not DEB1EV) : 
       ## Saving values of loss plots in a csv file so we can make loss plots with all the epochs when continuing trainings
-      epo = np.arange(start_epoch+1, epochs + start_epoch + 1)
-      #print(epo)
+      # per-output loss keys depend on the Keras version / layer auto-names ("reshape_1_loss" in Keras 2,
+      # e.g. "reshape_loss" in Keras 3), so take them from the model output names
+      _h = history.history
+      _nep = len(_h['loss'])
+      def _hist(key):
+          return _h[key] if key in _h else [np.nan]*_nep
+      _out_names = list(model.output_names)
+      print("history keys:", sorted(_h.keys()))
+      epo = np.arange(start_epoch+1, start_epoch + _nep + 1)
       list_save = [epo, 
-          history.history['loss'],
-          history.history['val_loss'], 
-          history.history['reshape_1_loss'],
-          history.history['val_reshape_1_loss'],
-          history.history['reshape_2_loss'],
-          history.history['val_reshape_2_loss']]
+          _hist('loss'),
+          _hist('val_loss'), 
+          _hist(_out_names[0]+'_loss'),
+          _hist('val_'+_out_names[0]+'_loss'),
+          _hist(_out_names[1]+'_loss'),
+          _hist('val_'+_out_names[1]+'_loss')]
       #print(list_save)
       arr = np.array(list_save)
       #print(arr.T)
@@ -862,7 +840,7 @@ if TRAIN :
       #DF.to_csv("loss_plots_{Epoch_i}_{Epoch_f}.csv".format(Epoch_i=start_epoch,Epoch_f=epochs+start_epoch))
 
       if (CONTINUE_TRAINING and CSV_LOAD):
-        csv_loss = pd.read_csv(CSV_LOAD)
+        csv_loss = pd.read_csv(CSV_LOAD, header=None)  # csv written by np.savetxt has no header row
         csv_loss_arr = csv_loss.to_numpy()
         #print(csv_loss_arr)
         arr_full = np.vstack((csv_loss_arr, arr.T))
@@ -985,12 +963,14 @@ if PREDICT :
     if not TRAIN : #must be loaded previously produced weights, otherwise if you predict on the same sample of the training not needed
         #Barrel training (used in presentation, CMSSW PR...)
         ## model.load_weights('data/DeepCore_barrel_weights.246-0.87.hdf5')
-        model.load_weights('Training_1019_9k/Deepcore_train_weights1019.h5')
+        model.load_weights(args.PredWeights)  # default: 'Training_1019_9k/Deepcore_train_weights1019.h5'
         #EndCap training, last weights (not satisfactory, consider to restart)      
         # model.load_weights('DeepCore_ENDCAP_train_ep150.h5')
         #model.load_weights('DeepCore_train_ev{ev}_ep{ep}.h5'.format(ev=jetNum,ep=epochs+start_epoch)) 
 
-    [validation_par,validation_prob] = model.predict([input_,input_jeta,input_jpt])
+    if not LOCAL_INPUT :
+        sys.exit("ERROR: --predict needs a local sample, pass it with --input FILE.root")
+    [validation_par,validation_prob] = model.predict([input_,input_jeta.reshape(-1,1),input_jpt.reshape(-1,1)], batch_size=batch_size, verbose=2)
     validation_par = np.float64(validation_par)
     np.savez("DeepCore_prediction_ev{ev}".format(ev=jetNum), validation_par=validation_par, validation_prob=validation_prob)
 
@@ -1022,6 +1002,7 @@ if OUTPUT :
      import ROOT
      from ROOT import gStyle
      from ROOT import gROOT
+     from ROOT import TColor
      gROOT.Reset()
      gROOT.SetBatch(True)
      gStyle.SetOptStat(0)
@@ -1378,7 +1359,7 @@ if OUTPUT :
              if(par == 1) :
                  pylab.title('Residual distribution - y',fontsize=22)
              if(par == 2) :
-                 pylab.title('Residual distribution - $\eta$',fontsize=22)
+                 pylab.title(r'Residual distribution - $\eta$',fontsize=22)
                  plt.text(-0.032,1030, "CMS ", weight='bold', size=17)
                  plt.text(-0.032,950, "Simulation Preliminary", style='italic', size=14)
                  plt.text(0.0215,1030, "13 TeV", size = 17)
@@ -1388,10 +1369,10 @@ if OUTPUT :
                  if not DRAW_ONLY : mean = np.array(bins).mean()
                  if not DRAW_ONLY : sigma = np.array(bins).std()
                 #if not DRAW_ONLY :  plt.text(0.009, 550, "Mean =%f"%(mean), size=14)
-                 if not DRAW_ONLY : plt.text(0.0145, 465, "$\sigma_{res}$ = %.3f"%(sigma), size=14)
+                 if not DRAW_ONLY : plt.text(0.0145, 465, r"$\sigma_{res}$ = %.3f"%(sigma), size=14)
 
              if(par == 3) :
-                 pylab.title('Residual distribution - $\phi$',fontsize=22)
+                 pylab.title(r'Residual distribution - $\phi$',fontsize=22)
              if(par == 4) :
                  pylab.title('Residual distribution - $p_T$',fontsize=22)
              pylab.ylabel('Events/0.0008',fontsize=18)
@@ -1421,9 +1402,9 @@ if OUTPUT :
              if(par == 1) :
                  pylab.title('Target distribution - y',fontsize=22)
              if(par == 2) :
-                 pylab.title('Target distribution - $\eta$',fontsize=22)
+                 pylab.title(r'Target distribution - $\eta$',fontsize=22)
              if(par == 3) :
-                 pylab.title('Target distribution - $\phi$',fontsize=22)
+                 pylab.title(r'Target distribution - $\phi$',fontsize=22)
              if(par == 4) :
                  pylab.title('Target distribution - $p_T$',fontsize=22)
              if(par==0 or par==1) :
@@ -1451,9 +1432,9 @@ if OUTPUT :
              if(par == 1) :
                  pylab.title('Prediction distribution - y',fontsize=22)
              if(par == 2) :
-                 pylab.title('Prediction distribution - $\eta$',fontsize=22)
+                 pylab.title(r'Prediction distribution - $\eta$',fontsize=22)
              if(par == 3) :
-                 pylab.title('Prediction distribution - $\phi$',fontsize=22)
+                 pylab.title(r'Prediction distribution - $\phi$',fontsize=22)
              if(par == 4) :
                  pylab.title('Prediction distribution - $p_T$',fontsize=22)
              if(par==0 or par==1) :
@@ -1485,8 +1466,8 @@ if OUTPUT :
                      plt.colorbar()
                  if(par == 2) :
                      plt.hist2d(bins_pred,bins_target,bins=50,range = [[-0.03, 0.03], [-0.03, 0.03]], cmap=plt.cm.viridis)
-                     plt.xlabel('$\eta$ prediction', fontsize=18, labelpad=-5)
-                     plt.ylabel('$\eta$ target', fontsize=18, labelpad=-5)
+                     plt.xlabel(r'$\eta$ prediction', fontsize=18, labelpad=-5)
+                     plt.ylabel(r'$\eta$ target', fontsize=18, labelpad=-5)
                      plt.colorbar()
                      plt.text(-0.029,0.026, "CMS ", weight='bold', size=17, color="white")
                      plt.text(-0.029,0.023, "Simulation Preliminary", style='italic', size=14, color="white")
@@ -1498,8 +1479,8 @@ if OUTPUT :
 
                  if(par == 3) :
                      plt.hist2d(bins_pred,bins_target,bins=50,range = [[-0.03, 0.03], [-0.03, 0.03]], cmap=plt.cm.viridis)
-                     plt.xlabel('$\phi$ prediction')
-                     plt.ylabel('$\phi$ target')
+                     plt.xlabel(r'$\phi$ prediction')
+                     plt.ylabel(r'$\phi$ target')
                      plt.colorbar()
                  if(par == 4) :
                      plt.hist2d(bins_pred,bins_target,bins=30,range = [[0, 0.15], [0, 0.15]])
