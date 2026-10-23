@@ -28,6 +28,7 @@ export SCRAM_ARCH=el9_amd64_gcc14
 cmsrel CMSSW_17_0_0_pre2
 cd CMSSW_17_0_0_pre2/src/
 cmsenv
+```
 - Download the DeepCore package
 ```
 git clone -b 17_0_X git@github.com:syuvivida/DeepCore
