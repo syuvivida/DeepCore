@@ -152,8 +152,8 @@ public:
   int eventID;
 
 
-  const double pitchX = 0.01;
-  const double pitchY = 0.015;
+  const double pitchX = 0.0025; // 25 um
+  const double pitchY = 0.010;  // 100 um
   const int distThr = 2;//4
 
 

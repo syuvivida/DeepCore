@@ -22,11 +22,11 @@ More information and documentation about DeepCore2.0 by Hichem can be found here
 		- Edit DeepCoreNtuplizer.cc to adjust things pertaining to the training samples (step 2)
 		  	- pixel size fix, saving pt instead of 1/pt, adding new variables in the training sample..
 
-- I used CMSSW_17_0_0_pre2,  but you should use whatever cms release is compatible with your dataset
+- I used CMSSW_20_1_0_pre3,  but you should use whatever cms release is compatible with your dataset
 ```
 export SCRAM_ARCH=el9_amd64_gcc14
-cmsrel CMSSW_17_0_0_pre2
-cd CMSSW_17_0_0_pre2/src/
+cmsrel CMSSW_20_1_0_pre3
+cd CMSSW_20_1_0_pre3/src/
 cmsenv
 ```
 - Download the DeepCore package
@@ -51,7 +51,7 @@ scram b -j 8
 ## D) Deep Dive into Ntuplizer files:
 ### a) test_DeepCorePrepareInput.py: (Ntuplizer step 1): 
 - Things that might need editing:
-	- adjust era if needed: Changed era to eras.Run3 in L5 as shown in this [twiki](https://twiki.cern.ch/twiki/bin/view/CMSPublic/SWGuideCmsDriverEras). Also potentially relevant [twiki](https://twiki.cern.ch/twiki/bin/view/CMSPublic/SWGuideGlobalHLT#Trigger_development_for_Run_3).
+	- adjust era if needed:
 	- adjust tag name if needed: Changed global tag to auto:phase1_2026_realistic in L72 as shown in this [twiki](https://twiki.cern.ch/twiki/bin/view/CMSPublic/SWGuideGlobalHLT#Setup_for_Running_on_MC_and_Data)
 	- Adjust output filename to Ntuplizer_output1.root in L55
 		- Don't forget to edit the other crab file, though the other crab job takes the publication name of the jobs rather than the files path
@@ -64,11 +64,7 @@ scram b -j 8
  - Things that you must edit:
 	- Change Request name in L4 to reflect the date or dataset: `config.General.requestName = 'DeepCorePrepareInput1224'`
 	- Change Output dataset name if you want: `config.Data.outputDatasetTag = 'DeepCoreNtuplizerInput'`
-	- edit in GEN-SIM-RECO and GEN-SIM or GEN-SIM-DIGI-RAW files L13-L14
-	```
-	config.Data.inputDataset = '/RelValQCD_Pt_1800_2.40_14/CMSSW_17_0_0_pre2-160X_mcRun3_2026_realistic_v6_STD_2026_RecycledGS_noPU-v2/GEN-SIM-RECO'
-	config.Data.secondaryInputDataset = '/RelValQCD_Pt_1800_2.40_14/CMSSW_17_0_0_pre1-160X_mcRun3_2026_realistic_v6_STD_RegeneratedGS_2026_noPU_202.4519_170947-v2/GEN-SIM'
-	```
+	- edit in GEN-SIM-RECO and GEN-SIM or GEN-SIM-DIGI-RAW files 
 	- Adjust total number of events and event per job:
 		- Edited L25-L26 to specify number of jobs and units per jobs: (don't use the same numbers, these numbers assume a dataset of with 9000 events, you'll probably be using one with 1M+ )
 			- `config.Data.unitsPerJob = 1000`
@@ -90,7 +86,7 @@ scram b -j 8
 		- `from Configuration.AlCa.GlobalTag import GlobalTag`
 		- `process.GlobalTag = GlobalTag(process.GlobalTag,'auto:phase1_2026_realistic','')`
 	- This update guarantees that the config file will find the appropriate detector condition depending on the cmssw version of the dataset according to [twiki](https://twiki.cern.ch/twiki/bin/view/CMSPublic/SWGuideGlobalHLT#Setup_for_Running_on_MC_and_Data)
-		- "It is vital that the correct GlobalTag is used. One can take advantage of special GT keywords in [autoCond.py](https://github.com/cms-sw/cmssw/blob/master/Configuration/AlCa/python/autoCond.py) to specify a type of GT; autoCond.py then resolves to the appropriate GT for the CMSSW release that's being used. We use "`auto:phase1_2026_realistic`" for MC, and "`auto:run3_hlt`" for Data."
+		- "It is vital that the correct GlobalTag is used. One can take advantage of special GT keywords in [autoCond.py](https://github.com/cms-sw/cmssw/blob/master/Configuration/AlCa/python/autoCond.py) to specify a type of GT; autoCond.py then resolves to the appropriate GT for the CMSSW release that's being used.
 - edit output file name in L60 if needed
 - adjust number of threads and streams in L30-L31 to 8 to match crab config file.
 ### d) test_DeepCoreNtuplizer_crab.py: (Ntuplizer step 2):
