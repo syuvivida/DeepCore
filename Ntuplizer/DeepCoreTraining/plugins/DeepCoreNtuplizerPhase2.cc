@@ -47,7 +47,6 @@
 
 
 #include "Geometry/CommonTopologies/interface/GlobalTrackingGeometry.h"
-//#include "Geometry/CommonDetUnit/interface/GlobalTrackingGeometry.h" for 14_X
 #include "Geometry/Records/interface/GlobalTrackingGeometryRecord.h"
 #include "Geometry/Records/interface/TrackerTopologyRcd.h"
 
@@ -90,10 +89,6 @@
 
 #include "SimDataFormats/Track/interface/SimTrack.h"
 
-// #include "SimDataFormats/Vertex/interface/SimVertex.h"
-
-
-//#include "Geometry/CommonDetUnit/interface/PixelGeomDetUnit.h" //for 14_2_X
 #include "Geometry/CommonTopologies/interface/PixelGeomDetUnit.h"
 
 
@@ -279,41 +274,41 @@ DeepCoreNtuplizerPhase2::DeepCoreNtuplizerPhase2(const edm::ParameterSet& iConfi
   usesResource("TFileService");
   edm::Service<TFileService> fileService;
 
-   DeepCoreNtuplizerPhase2Tree= fileService->make<TTree>("DeepCoreNtuplizerPhase2Tree","DeepCoreNtuplizerPhase2Tree");
-   DeepCoreNtuplizerPhase2Tree->Branch("cluster_measured",clusterMeas,Form("cluster_measured[%d][%d][%d]/D",jetDimX,jetDimY,Nlayer));
-   DeepCoreNtuplizerPhase2Tree->Branch("trackPar", trackPar, Form("trackPar[%d][%d][%d][%d]/D",jetDimX,jetDimY,Nover,Npar+1)); //NOFLAG
-   DeepCoreNtuplizerPhase2Tree->Branch("trackProb", trackProb, Form("trackProb[%d][%d][%d]/D",jetDimX,jetDimY,Nover));
-   DeepCoreNtuplizerPhase2Tree->Branch("jet_eta",&jet_eta);
-   DeepCoreNtuplizerPhase2Tree->Branch("jet_pt",&jet_pt);
-   DeepCoreNtuplizerPhase2Tree->Branch("jet_p",&jet_p);
-   DeepCoreNtuplizerPhase2Tree->Branch("jet_phi",&jet_phi);
-   DeepCoreNtuplizerPhase2Tree->Branch("jet_Ntrack",&jet_Ntrack);
-   DeepCoreNtuplizerPhase2Tree->Branch("track_pt",track_pt,"track_pt[100]/D");
-   DeepCoreNtuplizerPhase2Tree->Branch("track_pz",track_pz,"track_pz[100]/D");
-   DeepCoreNtuplizerPhase2Tree->Branch("track_eta",track_eta,"track_eta[100]/D");
-   DeepCoreNtuplizerPhase2Tree->Branch("track_phi",track_phi,"track_phi[100]/D");
-   DeepCoreNtuplizerPhase2Tree->Branch("event_ID",&eventID);
+  DeepCoreNtuplizerPhase2Tree= fileService->make<TTree>("DeepCoreNtuplizerPhase2Tree","DeepCoreNtuplizerPhase2Tree");
+  DeepCoreNtuplizerPhase2Tree->Branch("cluster_measured",clusterMeas,Form("cluster_measured[%d][%d][%d]/D",jetDimX,jetDimY,Nlayer));
+  DeepCoreNtuplizerPhase2Tree->Branch("trackPar", trackPar, Form("trackPar[%d][%d][%d][%d]/D",jetDimX,jetDimY,Nover,Npar+1)); //NOFLAG
+  DeepCoreNtuplizerPhase2Tree->Branch("trackProb", trackProb, Form("trackProb[%d][%d][%d]/D",jetDimX,jetDimY,Nover));
+  DeepCoreNtuplizerPhase2Tree->Branch("jet_eta",&jet_eta);
+  DeepCoreNtuplizerPhase2Tree->Branch("jet_pt",&jet_pt);
+  DeepCoreNtuplizerPhase2Tree->Branch("jet_p",&jet_p);
+  DeepCoreNtuplizerPhase2Tree->Branch("jet_phi",&jet_phi);
+  DeepCoreNtuplizerPhase2Tree->Branch("jet_Ntrack",&jet_Ntrack);
+  DeepCoreNtuplizerPhase2Tree->Branch("track_pt",track_pt,"track_pt[100]/D");
+  DeepCoreNtuplizerPhase2Tree->Branch("track_pz",track_pz,"track_pz[100]/D");
+  DeepCoreNtuplizerPhase2Tree->Branch("track_eta",track_eta,"track_eta[100]/D");
+  DeepCoreNtuplizerPhase2Tree->Branch("track_phi",track_phi,"track_phi[100]/D");
+  DeepCoreNtuplizerPhase2Tree->Branch("event_ID",&eventID);
 
-   //debug branches
-   DeepCoreNtuplizerPhase2Tree->Branch("NPixLay",NPixLay, Form("NPixLay[%d]/I",Nlayer));
-
-
+  //debug branches
+  DeepCoreNtuplizerPhase2Tree->Branch("NPixLay",NPixLay, Form("NPixLay[%d]/I",Nlayer));
 
 
 
-   /// reset variables to zero
-   for(int ix=0; ix<jetDimX; ix++){
-     for(int iy=0; iy<jetDimY; iy++){
-       // first initialize clusterMeas
-       for(unsigned int ilay=0; ilay < Nlayer; ilay++)
-	 clusterMeas[ix][iy][ilay] = 0.0;
-       for(unsigned int iOver=0; iOver < Nover; iOver++){
-	 trackProb[ix][iy][iOver] =0.0;
-	 for(unsigned int ipar=0; ipar<Npar+1; ipar++)
-	   trackPar[ix][iy][iOver][ipar] =0.0;	 
-       }
-     }
-   }
+
+
+  /// reset variables to zero
+  for(int ix=0; ix<jetDimX; ix++){
+    for(int iy=0; iy<jetDimY; iy++){
+      // first initialize clusterMeas
+      for(unsigned int ilay=0; ilay < Nlayer; ilay++)
+	clusterMeas[ix][iy][ilay] = 0.0;
+      for(unsigned int iOver=0; iOver < Nover; iOver++){
+	trackProb[ix][iy][iOver] =0.0;
+	for(unsigned int ipar=0; ipar<Npar+1; ipar++)
+	  trackPar[ix][iy][iOver][ipar] =0.0;	 
+      }
+    }
+  }
 
   
   if(barrelTrain_) {
@@ -325,7 +320,7 @@ DeepCoreNtuplizerPhase2::DeepCoreNtuplizerPhase2(const edm::ParameterSet& iConfi
     // stores Nlayer=4 barrel layers, so endcap windows would be empty. A disk-to-image-layer mapping is
     // needed before endcap training makes sense.
     edm::LogWarning("DeepCoreNtuplizerPhase2") << "endcapTrain=True: the image stores only the 4 barrel layers; "
-                                            "Phase-2 disks are not filled. Use barrelTrain for Phase-2.";
+      "Phase-2 disks are not filled. Use barrelTrain for Phase-2.";
   }
 
   
@@ -348,24 +343,6 @@ DeepCoreNtuplizerPhase2::~DeepCoreNtuplizerPhase2() {
 // ------------ method called to produce the data  ------------
 void DeepCoreNtuplizerPhase2::produce(edm::Event& iEvent, const edm::EventSetup& iSetup) {
   using namespace edm;
-
-  // for(jet){ //soglia pt 500 Gev
-  //   save(jet->pt,eta)
-  //   for(layer){
-  //     find(inter = intersezione jet-layer)
-  //     for(cluster on layer){
-  //       if(cluser in finestra 30x30 intorno a inter){
-  //         save(cluster->sig in posizione x,y,layer)
-  //         (trackcluster[n],tracks[n])=split(cluster)
-  //         for(trackcluster){ //cioè per ogni traccia che ha originato cluser
-  //           save(trackcluster->sig in posizione x,y,layer,track)//con ampiezza tot cluster/Ntrack?
-  //           save(trackcluster->track pt,eta,phi) //geom det, specific surface
-  //         }
-  //       }
-  //     }
-  //
-  //   }
-  // }
 
   magfield_   = iSetup.getHandle(theFieldToken);
   geometry_   = iSetup.getHandle(geomToken);
@@ -411,9 +388,9 @@ void DeepCoreNtuplizerPhase2::produce(edm::Event& iEvent, const edm::EventSetup&
     if (std::abs(jet.eta()) <  absEtaMin)continue;
     if (std::abs(jet.eta()) >  absEtaMax)continue;
     edm::LogInfo("DeepCoreNtuplizerPhase2") << "jet in acceptance"
-					 << ", pt= " << jet.pt()
-					 << ", eta=" << jet.eta()
-					 << ", p="   << jet.p(); 
+					    << ", pt= " << jet.pt()
+					    << ", eta=" << jet.eta()
+					    << ", p="   << jet.p(); 
       
  
     const reco::Vertex& jetVertex = (*vertices)[0];
@@ -423,94 +400,94 @@ void DeepCoreNtuplizerPhase2::produce(edm::Event& iEvent, const edm::EventSetup&
     std::vector<GlobalVector> splitClustDirSet = splittedClusterDirections(jet, tTopo, parEst, jetVertex, 1);
     edm::LogInfo("DeepCoreNtuplizerPhase2") << "number of merged clusters on lay1="<<splitClustDirSet.size() << "+jetDir" ;
     if(splitClustDirSet.size()==0) {
-        splitClustDirSet = splittedClusterDirections(jet, tTopo, parEst, jetVertex, 2);
-        edm::LogInfo("DeepCoreNtuplizerPhase2") << "missing clusters on lay1, used lay2 to find directions, number of cluster=" << splitClustDirSet.size() << "+jetDir" << std::endl;
+      splitClustDirSet = splittedClusterDirections(jet, tTopo, parEst, jetVertex, 2);
+      edm::LogInfo("DeepCoreNtuplizerPhase2") << "missing clusters on lay1, used lay2 to find directions, number of cluster=" << splitClustDirSet.size() << "+jetDir" << std::endl;
+    }
+    splitClustDirSet.push_back(jetDirection);
+
+    for(int cc=0; cc<(int)splitClustDirSet.size(); cc++){
+      for(uint lp=0; lp<Nlayer; lp++) NPixLay[lp] = 0;
+
+      GlobalVector bigClustDir = splitClustDirSet.at(cc);
+
+
+      LocalPoint jetInter(0,0,0);
+      const auto & simtracksVector = simtracks.product();
+
+      jet_pt = jet.pt();
+      jet_p = jet.p();
+      jet_eta = jet.eta();
+      jet_phi = jet.phi();
+      eventID= iEvent.id().event();
+
+      auto jetVert = jetVertex; //trackInfo filling
+      std::vector<std::map<int,SiPixelCluster>> clusterMapVector;
+      std::vector<PSimHit> goodSimHit;
+
+      edmNew::DetSetVector<SiPixelCluster>::const_iterator detIt = inputPixelClusters->begin();
+
+      // what to do if layer 1 is bad?
+      const GeomDet* globDet = DetectorSelector(2, jet, bigClustDir, jetVertex, tTopo,parEst, simtracksVector); //select detector mostly hitten by the jet
+
+      //fill the good det vector
+      std::vector<const GeomDet*> goodDets;
+      for(uint l=1; l<Nlayer+1; l++){
+	const GeomDet* goodDet = DetectorSelector(l, jet, bigClustDir, jetVertex, tTopo,parEst, simtracksVector);
+	goodDets.push_back(goodDet);	  
       }
-      splitClustDirSet.push_back(jetDirection);
 
-      for(int cc=0; cc<(int)splitClustDirSet.size(); cc++){
-	for(uint lp=0; lp<Nlayer; lp++) NPixLay[lp] = 0;
+      for (; detIt != inputPixelClusters->end(); detIt++) { //loop deset
+	const edmNew::DetSet<SiPixelCluster>& detset = *detIt;
+	const GeomDet* det = geometry_->idToDet(detset.id()); 
 
-	GlobalVector bigClustDir = splitClustDirSet.at(cc);
+	bool goodDetBool = false;
+	goodDetBool = (std::find(goodDets.begin(), goodDets.end(), det) != goodDets.end());
+	if (!pitchOK(det)) continue;  // window size in pixels assumes 25x100 um
 
-
-	LocalPoint jetInter(0,0,0);
-	const auto & simtracksVector = simtracks.product();
-
-	jet_pt = jet.pt();
-	jet_p = jet.p();
-	jet_eta = jet.eta();
-	jet_phi = jet.phi();
-	eventID= iEvent.id().event();
-
-	auto jetVert = jetVertex; //trackInfo filling
-	std::vector<std::map<int,SiPixelCluster>> clusterMapVector;
-	std::vector<PSimHit> goodSimHit;
-
-	edmNew::DetSetVector<SiPixelCluster>::const_iterator detIt = inputPixelClusters->begin();
-
-	// what to do if layer 1 is bad?
-	const GeomDet* globDet = DetectorSelector(2, jet, bigClustDir, jetVertex, tTopo,parEst, simtracksVector); //select detector mostly hitten by the jet
-
-	//fill the good det vector
-	std::vector<const GeomDet*> goodDets;
-	for(uint l=1; l<Nlayer+1; l++){
-	  const GeomDet* goodDet = DetectorSelector(l, jet, bigClustDir, jetVertex, tTopo,parEst, simtracksVector);
-	  goodDets.push_back(goodDet);	  
-	}
-
-	for (; detIt != inputPixelClusters->end(); detIt++) { //loop deset
-	  const edmNew::DetSet<SiPixelCluster>& detset = *detIt;
-	  const GeomDet* det = geometry_->idToDet(detset.id()); 
-
-	  bool goodDetBool = false;
-	  goodDetBool = (std::find(goodDets.begin(), goodDets.end(), det) != goodDets.end());
-	  if (!pitchOK(det)) continue;  // window size in pixels assumes 25x100 um
-
-	  for (auto cluster = detset.begin(); cluster != detset.end(); cluster++)
-	    { //loop cluster
-	      const SiPixelCluster& aCluster = *cluster;
+	for (auto cluster = detset.begin(); cluster != detset.end(); cluster++)
+	  { //loop cluster
+	    const SiPixelCluster& aCluster = *cluster;
 	    //          det_id_type aClusterID= detset.id();
 	    // if(DetId(aClusterID).subdetId()!=1) continue; #select only  barrel clusters
-	      uint lay = tTopo->layer(det->geographicalId());
-	      if(det->geographicalId().subdetId()==PixelSubdetector::PixelEndcap)
-		lay=lay+4; //endcap layer counting = 5,6,7
+	    uint lay = tTopo->layer(det->geographicalId());
+	    if(det->geographicalId().subdetId()==PixelSubdetector::PixelEndcap)
+	      lay=lay+4; //endcap layer counting = 5,6,7
 	      
-	      std::pair<bool, Basic3DVector<float>> interPair = findIntersection(bigClustDir,(reco::Candidate::Point)jetVertex.position(), det);
+	    std::pair<bool, Basic3DVector<float>> interPair = findIntersection(bigClustDir,(reco::Candidate::Point)jetVertex.position(), det);
 
-	      if(interPair.first==false) continue;
+	    if(interPair.first==false) continue;
 
-	      Basic3DVector<float> inter = interPair.second;
+	    Basic3DVector<float> inter = interPair.second;
 
-	      auto localInter = det->specificSurface().toLocal((GlobalPoint)inter);
-	      LocalPoint cPos_local = parEst->localParametersV(aCluster,(*geometry_->idToDetUnit(detIt->id())))[0].first;
+	    auto localInter = det->specificSurface().toLocal((GlobalPoint)inter);
+	    LocalPoint cPos_local = parEst->localParametersV(aCluster,(*geometry_->idToDetUnit(detIt->id())))[0].first;
 
-	      edm::LogInfo("DeepCoreNtuplizerPhase2").log([&](auto & logger){
-		GlobalPoint pointVertex(jetVertex.position().x(), jetVertex.position().y(), jetVertex.position().z());
-		GlobalPoint cPos = det->surface().toGlobal(parEst->localParametersV(aCluster,(*geometry_->idToDetUnit(detIt->id())))[0].first);
-		// GlobalVector intersectionDir = (GlobalPoint) inter - pointVertex;
+	    edm::LogInfo("DeepCoreNtuplizerPhase2").log([&](auto & logger){
+	      GlobalPoint pointVertex(jetVertex.position().x(), jetVertex.position().y(), jetVertex.position().z());
+	      GlobalPoint cPos = det->surface().toGlobal(parEst->localParametersV(aCluster,(*geometry_->idToDetUnit(detIt->id())))[0].first);
+	      // GlobalVector intersectionDir = (GlobalPoint) inter - pointVertex;
               // auto deltaR_glob = Geom::deltaR(bigClustDir, intersectionDir);
-		GlobalVector clusterDir = cPos - pointVertex;
-		auto deltaR_clust = Geom::deltaR(bigClustDir, clusterDir);
-		logger << "cluster with DeltaR(clust,window center direction)" << deltaR_clust;
-	      });
+	      GlobalVector clusterDir = cPos - pointVertex;
+	      auto deltaR_clust = Geom::deltaR(bigClustDir, clusterDir);
+	      logger << "cluster with DeltaR(clust,window center direction)" << deltaR_clust;
+	    });
 
 	    // look for 30 x 30 pixels around the cluster direction
-	      if(std::abs(cPos_local.x()-localInter.x())/pitchX > jetDimX/2)
-		continue;
-	      if(std::abs(cPos_local.y()-localInter.y())/pitchY > jetDimY/2)
-		continue;
+	    if(std::abs(cPos_local.x()-localInter.x())/pitchX > jetDimX/2)
+	      continue;
+	    if(std::abs(cPos_local.y()-localInter.y())/pitchY > jetDimY/2)
+	      continue;
 	      
-	      if (lay >= 1 && lay <= Nlayer)  // endcap "layers" are 5-16 in Phase-2: outside NPixLay[Nlayer]
-	        NPixLay[lay-1]= NPixLay[lay-1]+1;
-	      if(goodDetBool)
-		fillPixelMatrix(aCluster,lay,localInter, det);
-	    } //cluster
-	} //detset 
+	    if (lay >= 1 && lay <= Nlayer)  // endcap "layers" are 5-16 in Phase-2: outside NPixLay[Nlayer]
+	      NPixLay[lay-1]= NPixLay[lay-1]+1;
+	    if(goodDetBool)
+	      fillPixelMatrix(aCluster,lay,localInter, det);
+	  } //cluster
+      } //detset 
 
 
       // -----good sim hit selection (hit inside window) -----------//
-	std::vector<PSimHit>::const_iterator shIt = simhits->begin();
+      std::vector<PSimHit>::const_iterator shIt = simhits->begin();
 
       // std::set<const GeomDet*> simhitsDetSet;
       for (; shIt != simhits->end(); shIt++) { //loop deset
@@ -563,7 +540,7 @@ void DeepCoreNtuplizerPhase2::produce(edm::Event& iEvent, const edm::EventSetup&
 	track_eta[h] = 0.0;
 	track_phi[h] = 0.0;
       }    
-      } // end of loop over big cluster directions
+    } // end of loop over big cluster directions
   } // end of loop over jets
 
 }
@@ -590,8 +567,8 @@ bool DeepCoreNtuplizerPhase2::pitchOK(const GeomDet* det){
   const bool ok = std::abs(p.first - pitchX) < 1e-5 && std::abs(p.second - pitchY) < 1e-5;
   if (!ok && !warnedPitch_) {
     edm::LogWarning("DeepCoreNtuplizerPhase2") << "module " << det->geographicalId().rawId() << " has pitch "
-                                         << p.first * 1e4 << " x " << p.second * 1e4
-                                         << " um, not 25 x 100 um; such modules are skipped (window size in pixels)";
+					       << p.first * 1e4 << " x " << p.second * 1e4
+					       << " um, not 25 x 100 um; such modules are skipped (window size in pixels)";
     warnedPitch_ = true;
   }
   return ok;
@@ -752,54 +729,54 @@ void DeepCoreNtuplizerPhase2::fillTrackInfo(const reco::Candidate& jet, const au
           
         // pixel centre from the module topology (handles the larger pixels at chip edges of Phase-2 modules,
         // instead of assuming big pixel = 2 x pitch). localX(i+0.5) is the centre of pixel i.
-          const auto& ptopo = dynamic_cast<const PixelGeomDetUnit*>(det)->specificTopology();
-          const int ipx = x + pixJInter.first - jetDimX/2;
-          const int ipy = y + pixJInter.second - jetDimY/2;
-          LocalPoint pixCenter(ptopo.localX(ipx + 0.5f), ptopo.localY(ipy + 0.5f));
-          double distX =  localTrkInter.x()-pixCenter.x();
-          double distY =  localTrkInter.y()-pixCenter.y();
+	const auto& ptopo = dynamic_cast<const PixelGeomDetUnit*>(det)->specificTopology();
+	const int ipx = x + pixJInter.first - jetDimX/2;
+	const int ipy = y + pixJInter.second - jetDimY/2;
+	LocalPoint pixCenter(ptopo.localX(ipx + 0.5f), ptopo.localY(ipy + 0.5f));
+	double distX =  localTrkInter.x()-pixCenter.x();
+	double distY =  localTrkInter.y()-pixCenter.y();
          
-          // debug
-         // std::cout << " dx [cm]= " << distX << " Track crossing ( " << localTrkInter.x() << ") - pixel location ( " << pix2loc.x() << " ) - 0.005 " << std::endl;
-         // std::cout << " is x big? " << sz_xy.first << " is y big? " << sz_xy.second << std::endl;
-         // std::cout << " dy [cm]= " << distY << " Track crossing ( " << localTrkInter.y() << ") - pixel location ( " << pix2loc.y() << " ) - 0.0075 " << std::endl;
+	// debug
+	// std::cout << " dx [cm]= " << distX << " Track crossing ( " << localTrkInter.x() << ") - pixel location ( " << pix2loc.x() << " ) - 0.005 " << std::endl;
+	// std::cout << " is x big? " << sz_xy.first << " is y big? " << sz_xy.second << std::endl;
+	// std::cout << " dy [cm]= " << distY << " Track crossing ( " << localTrkInter.y() << ") - pixel location ( " << pix2loc.y() << " ) - 0.0075 " << std::endl;
 
-	  if(distX<0.000001 && distX> -0.000001)
-	    distX = 0.0;
+	if(distX<0.000001 && distX> -0.000001)
+	  distX = 0.0;
 	  
-	  if(distY<0.000001 && distY> - 0.000001)
-	    distY = 0.0;
+	if(distY<0.000001 && distY> - 0.000001)
+	  distY = 0.0;
 	  
-          info[1] = sqrt(distX*distX+distY*distY);
+	info[1] = sqrt(distX*distX+distY*distY);
 
-          if(fabs(distX)<distThr*pitchX && fabs(distY)<distThr*pitchY){
+	if(fabs(distX)<distThr*pitchX && fabs(distY)<distThr*pitchY){
 
-            info[2] = distX;
-            info[3] = distY;
+	  info[2] = distX;
+	  info[3] = distY;
 
-            info[4] = st.momentum().Eta()-jetDir.eta();
-            info[5] = deltaPhi(st.momentum().Phi(),jetDir.phi());
-            info[7] = st.momentum().Pt(); // 1/pt --> pt fix
-          }
-          else{
+	  info[4] = st.momentum().Eta()-jetDir.eta();
+	  info[5] = deltaPhi(st.momentum().Phi(),jetDir.phi());
+	  info[7] = st.momentum().Pt(); // 1/pt --> pt fix
+	}
+	else{
           if(info[0]== 1) {
-             edm::LogError("DeepCoreNtuplizerPhase2") << "prob=1 outside of radious of " << distThr << "pixel from track intersection, probable bug";
+	    edm::LogError("DeepCoreNtuplizerPhase2") << "prob=1 outside of radious of " << distThr << "pixel from track intersection, probable bug";
           }
           info[2] = 99999999;
           info[3] = 99999999;
-          }
+	}
           
-          if(info[0]==0 && info[2]==0.0 && info[3]==0.0 && info[4]==0.0 && info[5]==0.0) {
-            info[6] = 0;
-          }
-          else if(info[2] > 9999999 && info[3] > 9999999) {
-            info[6] = 0;
-          }
-          else{
-             info[6]=1;
-           }
+	if(info[0]==0 && info[2]==0.0 && info[3]==0.0 && info[4]==0.0 && info[5]==0.0) {
+	  info[6] = 0;
+	}
+	else if(info[2] > 9999999 && info[3] > 9999999) {
+	  info[6] = 0;
+	}
+	else{
+	  info[6]=1;
+	}
 
-          tracksInfo.push_back(trkInfoObj(info[0],info[1],info[2],info[3],info[4],info[5],info[6],info[7]));
+	tracksInfo.push_back(trkInfoObj(info[0],info[1],info[2],info[3],info[4],info[5],info[6],info[7]));
 
       }//good sim tracks
 
@@ -888,7 +865,7 @@ const GeomDet* DeepCoreNtuplizerPhase2::DetectorSelector(int llay, const reco::C
 
   if(distDetSet.size()==0) return (GeomDet*)0;
   else 
-      return distDetSet.begin()->second;
+    return distDetSet.begin()->second;
     
 }
 
@@ -970,7 +947,7 @@ void DeepCoreNtuplizerPhase2::fillDescriptions(edm::ConfigurationDescriptions& d
   desc.add<double>("tanLorentzAngle", -0.21);
   desc.add<double>("tanLorentzAngleBarrelLayer1", 0.0);
   desc.add<double>("chargeNorm", 14000.)
-      ->setComment("pixel charge normalization in the image; the seed generator must use the same value");
+    ->setComment("pixel charge normalization in the image; the seed generator must use the same value");
   desc.add<std::string>("pixelCPE", "PixelCPEGeneric");
   desc.add<bool>("barrelTrain", true);
   desc.add<bool>("endcapTrain", false);
