@@ -25,7 +25,7 @@ import torch.nn.functional as F
 import uproot
 
 INPUT_MODULE = "DeepCoreNtuplizerTest"
-INPUT_TREE = "DeepCoreNtuplizerPhase2Tree"
+INPUT_TREE = os.environ.get("DEEPCORE_TREE", "DeepCoreNtuplizerPhase2Tree")
 BRANCHES_IN = ["cluster_measured", "jet_eta", "jet_pt"]
 BRANCHES_TGT = ["trackPar", "trackProb"]
 
