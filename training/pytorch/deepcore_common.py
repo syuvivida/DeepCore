@@ -23,6 +23,9 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import uproot
+# fork-safe file access: uproot's default (fsspec) source uses a background thread that does not survive fork(),
+# which deadlocks the DataLoader workers.  The memory-map source has no threads.
+UPROOT_OPTS = dict(handler=uproot.source.file.MemmapSource)
 
 INPUT_MODULE = "DeepCoreNtuplizerTest"
 INPUT_TREE = os.environ.get("DEEPCORE_TREE", "DeepCoreNtuplizerPhase2Tree")
@@ -127,7 +130,7 @@ def loss_prob(logit, target_prob, wei, soft=False, pos_weight=10.):
 # input files
 # ------------------------------------------------------------------------------------------------
 def tree_cycles(filename):
-    with uproot.open(filename) as f:
+    with uproot.open(filename, **UPROOT_OPTS) as f:
         if INPUT_MODULE not in f:
             return []
         cyc = []
@@ -153,7 +156,7 @@ def tree_sources(pattern, cycles_mode="latest"):
             cyc = cyc[-1:]
         for c in cyc:
             obj = "{}/{};{}".format(INPUT_MODULE, INPUT_TREE, c)
-            with uproot.open(fn) as f:
+            with uproot.open(fn, **UPROOT_OPTS) as f:
                 n = f[obj].num_entries
             out.append(dict(file=fn, tree=obj, start=0, stop=n, n=n))
     return out
@@ -176,7 +179,7 @@ def n_entries(sources):
 def window_shape(sources):
     """(jetDimX, jetDimY, nLayers) read from the first entry."""
     s = sources[0]
-    with uproot.open(s["file"]) as f:
+    with uproot.open(s["file"], **UPROOT_OPTS) as f:
         a = f[s["tree"]]["cluster_measured"].array(library="np", entry_start=s["start"], entry_stop=s["start"] + 1)
     a = np.asarray(a[0]) if a.dtype == object else a[0]
     return tuple(a.shape)
@@ -191,7 +194,7 @@ def _as_regular(arr):
 def read_chunks(source, branches, step_size, lay_num):
     """yield dicts of float32 numpy arrays for one source."""
     for chunk in uproot.iterate({source["file"]: source["tree"]}, branches, step_size=step_size,
-                                library="np", entry_start=source["start"], entry_stop=source["stop"]):
+                                library="np", entry_start=source["start"], entry_stop=source["stop"], **UPROOT_OPTS):
         out = {b: _as_regular(chunk[b]) for b in branches}
         if "cluster_measured" in out:
             out["cluster_measured"] = out["cluster_measured"][..., :lay_num]

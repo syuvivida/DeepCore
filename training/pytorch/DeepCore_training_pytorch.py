@@ -229,6 +229,7 @@ def run_epoch(loader, train, max_steps):
     model.train(train)
     tot = np.zeros(3)
     nb = 0
+    t_ep = time.time()
     with torch.set_grad_enabled(train):
         for i, batch in enumerate(loader):
             if max_steps and i >= max_steps:
