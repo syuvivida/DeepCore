@@ -247,6 +247,8 @@ def run_epoch(loader, train, max_steps):
                 scaler.update()
             tot += [loss.item(), lp.item(), lc.item()]
             nb += 1
+            if nb % 50 == 0:
+                print("  %s batch %d  loss %.4f  (%.1f s/batch)" % ("train" if train else "val", nb, loss.item(),(time.time() - t_ep) / nb), flush=True)
     return tot / max(nb, 1), nb
 
 
