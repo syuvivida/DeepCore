@@ -82,7 +82,8 @@ class DeepCoreNet(nn.Module):
         """clusters [N, L, X, Y]; jet_eta, jet_pt [N].
         Returns par [N, X, Y, ov, par+1] and prob *logits* [N, X, Y, ov, 2] (Keras Reshape ordering)."""
         n, _, nx, ny = clusters.shape
-        jet = torch.stack([jet_eta, jet_pt], dim=1)[:, :, None, None].expand(n, 2, nx, ny)  # = UpSampling2D
+#        jet = torch.stack([jet_eta, jet_pt], dim=1)[:, :, None, None].expand(n, 2, nx, ny)  # = UpSampling2D
+        jet = torch.stack([jet_eta, jet_pt / 1000.], dim=1)[:, :, None, None].expand(n, 2, nx, ny)
         h = self.trunk(torch.cat([clusters, jet], dim=1))
         par = self.par_head(h).permute(0, 2, 3, 1).reshape(n, nx, ny, self.overlap_num, self.par_num + 1)
         logit = self.prob_head(h).permute(0, 2, 3, 1).reshape(n, nx, ny, self.overlap_num, 2)

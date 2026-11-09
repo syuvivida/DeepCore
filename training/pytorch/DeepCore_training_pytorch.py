@@ -242,8 +242,13 @@ def run_epoch(loader, train, max_steps):
             lc = dc.loss_prob(logit, tprob, wei, soft=soft, pos_weight=args.posWeight)
             loss = lp + lc  # loss_weights = [1, 1]
             if train:
+                if not torch.isfinite(loss):          # skip a broken batch instead of corrupting the weights
+                    print("  WARNING: non-finite loss in batch", i, "- skipped", flush=True)
+                    continue
                 optimizer.zero_grad(set_to_none=True)
                 scaler.scale(loss).backward()
+                scaler.unscale_(optimizer)            # so the clipping sees the true gradient size
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=5.0)
                 scaler.step(optimizer)
                 scaler.update()
             tot += [loss.item(), lp.item(), lc.item()]
