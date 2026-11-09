@@ -564,7 +564,7 @@ bool DeepCoreNtuplizerPhase2::pitchOK(const GeomDet* det){
   const auto* pdu = dynamic_cast<const PixelGeomDetUnit*>(det);
   if (!pdu) return false;
   const auto p = pdu->specificTopology().pitch();
-  const bool ok = std::abs(p.first - pitchX) < 1e-5 && std::abs(p.second - pitchY) < 1e-5;
+  const bool ok = std::abs(p.first - pitchX) < 0.01*pitchX && std::abs(p.second - pitchY) < 0.01*pitchY;
   if (!ok && !warnedPitch_) {
     edm::LogWarning("DeepCoreNtuplizerPhase2") << "module " << det->geographicalId().rawId() << " has pitch "
 					       << p.first * 1e4 << " x " << p.second * 1e4
