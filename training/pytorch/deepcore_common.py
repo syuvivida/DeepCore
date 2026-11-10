@@ -322,9 +322,6 @@ def prop_on_layer(x1, y1, eta, phi, eta_jet, lay, geom):
 
 """
 def eff_fake(par_pred, prob_pred, tpar, tprob, prob_thr, lay_dist=3):
-"""
-    """chi2-based efficiency and fake rate (vectorized version of the old validationCall)."""
-"""    
     d = par_pred[..., :4] - tpar[..., :4]
     scale = math.atan(2 / float(lay_dist * 3))
     chi2 = d[..., 0] ** 2 + d[..., 1] ** 2 + (d[..., 2] ** 2 + d[..., 3] ** 2) / scale
@@ -340,6 +337,7 @@ def eff_fake(par_pred, prob_pred, tpar, tprob, prob_thr, lay_dist=3):
 """
 
 def eff_fake(par_pred, prob_pred, tpar, tprob, prob_thr, lay_dist=3):
+    """chi2-based efficiency and fake rate (vectorized version of the old validationCall)."""
     d = par_pred[..., :4] - tpar[..., :4]
     scale = math.atan(2 / float(lay_dist * 3))
     chi2 = d[..., 0] ** 2 + d[..., 1] ** 2 + (d[..., 2] ** 2 + d[..., 3] ** 2) / scale
