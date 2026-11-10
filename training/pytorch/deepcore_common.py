@@ -336,17 +336,40 @@ def eff_fake(par_pred, prob_pred, tpar, tprob, prob_thr, lay_dist=3):
     return res
 """
 
-def eff_fake(par_pred, prob_pred, tpar, tprob, prob_thr, lay_dist=3):
-    """chi2-based efficiency and fake rate (vectorized version of the old validationCall)."""
+
+def eff_fake(par_pred, prob_pred, tpar, tprob, prob_thr, lay_dist=3, near=2):
+    """Track-level efficiency and fake rate.
+
+    A prediction (pixel, slot with prob > prob_thr) is GOOD if it lies in the region of interest of a true track
+    (flag column of trackPar = 1, i.e. within `near` (=distThr) pixels of a true crossing) and its predicted
+    parameters match that track's parameters stored at that pixel (chi2 <= cut).  Neighbouring pixels of the same
+    track therefore count as good (duplicates of one seed), not as fakes.
+      efficiency = true crossings with at least one good prediction within +-near pixels / true crossings
+      fake rate  = predictions that are not good / all predictions
+      dup        = good predictions per found track (how many seeds one track gets before any cleaning)
+    """
     d = par_pred[..., :4] - tpar[..., :4]
     scale = math.atan(2 / float(lay_dist * 3))
     chi2 = d[..., 0] ** 2 + d[..., 1] ** 2 + (d[..., 2] ** 2 + d[..., 3] ** 2) / scale
-    is_t = tprob == 1
+    flag = tpar[..., -1] > 0                        # region of interest of a true track
+    is_t = tprob == 1                               # exact crossing pixel (label)
     is_p = prob_pred > prob_thr
     n_true, n_pred = max(1, int(is_t.sum())), int(is_p.sum())
     res = {}
     for c in (4, 8):
-        good = is_t & is_p & (chi2 <= c)
-        res["eff_%d" % c] = float(good.sum()) / n_true                          # found / true tracks
-        res["fake_%d" % c] = float((is_p & ~good).sum()) / n_pred if n_pred else 1.   # predictions not matching a true track
+        good = is_p & flag & (chi2 <= c)                         # [N, X, Y, slot]
+        g = good.any(axis=-1)                                    # any slot, [N, X, Y]
+        # dilate by +-near pixels: is there a good prediction within the neighbourhood of each pixel?
+        gp = np.pad(g, ((0, 0), (near, near), (near, near)))
+        X, Y = g.shape[1], g.shape[2]
+        dil = np.zeros_like(g)
+        for dx in range(-near, near + 1):
+            for dy in range(-near, near + 1):
+                dil |= gp[:, near + dx:near + dx + X, near + dy:near + dy + Y]
+        found = (is_t & dil[..., None]).sum()
+        res["eff_%d" % c] = float(found) / n_true
+        res["fake_%d" % c] = float((is_p & ~good).sum()) / n_pred if n_pred else 1.
+        res["dup_%d" % c] = float(good.sum()) / max(1, int(found))
     return res
+
+
