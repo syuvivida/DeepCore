@@ -320,9 +320,11 @@ def prop_on_layer(x1, y1, eta, phi, eta_jet, lay, geom):
     x_out = distx * math.tan(-phi) + x1
     return x_out, y_out
 
-
+"""
 def eff_fake(par_pred, prob_pred, tpar, tprob, prob_thr, lay_dist=3):
+"""
     """chi2-based efficiency and fake rate (vectorized version of the old validationCall)."""
+"""    
     d = par_pred[..., :4] - tpar[..., :4]
     scale = math.atan(2 / float(lay_dist * 3))
     chi2 = d[..., 0] ** 2 + d[..., 1] ** 2 + (d[..., 2] ** 2 + d[..., 3] ** 2) / scale
@@ -334,4 +336,19 @@ def eff_fake(par_pred, prob_pred, tpar, tprob, prob_thr, lay_dist=3):
     for c in (4, 8):
         res["eff_%d" % c] = float(((chi2 <= c) & is_t & is_p).sum()) / n_tot_eff
         res["fake_%d" % c] = float(((chi2 >= c) & is_t & is_p).sum()) / n_pred if n_pred else 1.
+    return res
+"""
+
+def eff_fake(par_pred, prob_pred, tpar, tprob, prob_thr, lay_dist=3):
+    d = par_pred[..., :4] - tpar[..., :4]
+    scale = math.atan(2 / float(lay_dist * 3))
+    chi2 = d[..., 0] ** 2 + d[..., 1] ** 2 + (d[..., 2] ** 2 + d[..., 3] ** 2) / scale
+    is_t = tprob == 1
+    is_p = prob_pred > prob_thr
+    n_true, n_pred = max(1, int(is_t.sum())), int(is_p.sum())
+    res = {}
+    for c in (4, 8):
+        good = is_t & is_p & (chi2 <= c)
+        res["eff_%d" % c] = float(good.sum()) / n_true                          # found / true tracks
+        res["fake_%d" % c] = float((is_p & ~good).sum()) / n_pred if n_pred else 1.   # predictions not matching a true track
     return res
