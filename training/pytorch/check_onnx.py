@@ -22,7 +22,9 @@ p.add_argument("--weights", required=True)
 p.add_argument("--onnx", required=True)
 p.add_argument("--input", required=True, help="ntuple (ROOT, glob allowed)")
 p.add_argument("--maxEvents", type=int, default=20)
-p.add_argument("--atol", type=float, default=1e-4)
+p.add_argument("--atol", type=float, default=1e-4, help="absolute tolerance")
+p.add_argument("--rtol", type=float, default=1e-5, help="relative tolerance (the pT output is in GeV: float32 "
+                                                        "rounding alone gives ~1e-4 at 1 TeV)")
 args = p.parse_args()
 
 ckpt = torch.load(args.weights, map_location="cpu", weights_only=False)
@@ -57,8 +59,12 @@ o_par, o_prob = np.concatenate(o_par), np.concatenate(o_prob)
 ok = True
 for name, t, o in (("par", t_par, o_par), ("prob", t_prob, o_prob)):
     d = np.abs(t - o)
-    print("{:5s} shape {}  max|diff| {:.2e}  mean|diff| {:.2e}".format(name, o.shape, d.max(), d.mean()))
-    ok &= bool(d.max() < args.atol)
+    i = np.unravel_index(np.argmax(d), d.shape)
+    tol = args.atol + args.rtol * np.abs(t)
+    n_bad = int((d > tol).sum())
+    print("{:5s} shape {}  max|diff| {:.2e} (where value = {:.4g})  mean|diff| {:.2e}  outside tolerance: {}"
+          .format(name, o.shape, d.max(), t[i], d.mean(), n_bad))
+    ok &= (n_bad == 0)
 
 thr = 0.85
 n_t, n_o = int((t_prob[..., 0] > thr).sum()), int((o_prob[..., 0] > thr).sum())
